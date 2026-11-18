@@ -1,0 +1,73 @@
+package com.mipropiobanco.data.prefs
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+enum class ModoTema(val etiqueta: String) {
+    SISTEMA("Según el sistema"),
+    CLARO("Claro"),
+    OSCURO("Oscuro")
+}
+
+class AjustesPreferencias(context: Context) {
+    private val prefs = context.getSharedPreferences("ajustes", Context.MODE_PRIVATE)
+
+    private val _modoTema = MutableStateFlow(leerModo())
+    val modoTema: StateFlow<ModoTema> = _modoTema.asStateFlow()
+
+    /** Cuánto puedes destinar cada mes a pagar deudas (plan bola de nieve). */
+    private val _presupuestoDeudas = MutableStateFlow(prefs.getLong(CLAVE_PRESUPUESTO, 0L))
+    val presupuestoDeudas: StateFlow<Long> = _presupuestoDeudas.asStateFlow()
+
+    /** true = el usuario eligió usar la app sin cuenta (solo en este celular). */
+    private val _modoLocal = MutableStateFlow(prefs.getBoolean(CLAVE_MODO_LOCAL, false))
+    val modoLocal: StateFlow<Boolean> = _modoLocal.asStateFlow()
+
+    private fun leerModo(): ModoTema =
+        runCatching { ModoTema.valueOf(prefs.getString(CLAVE_TEMA, null) ?: ModoTema.SISTEMA.name) }
+            .getOrDefault(ModoTema.SISTEMA)
+
+    fun cambiarModoTema(modo: ModoTema) {
+        prefs.edit().putString(CLAVE_TEMA, modo.name).apply()
+        _modoTema.value = modo
+    }
+
+    fun cambiarPresupuestoDeudas(valor: Long) {
+        val v = valor.coerceAtLeast(0L)
+        prefs.edit().putLong(CLAVE_PRESUPUESTO, v).apply()
+        _presupuestoDeudas.value = v
+    }
+
+    fun cambiarModoLocal(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_MODO_LOCAL, valor).apply()
+        _modoLocal.value = valor
+    }
+
+    // ---- Control de sincronización ----
+
+    /** Momento del último cambio hecho en este celular. */
+    fun localModificado(): Long = prefs.getLong(CLAVE_MODIFICADO, 0L)
+
+    fun fijarModificado(millis: Long) = prefs.edit().putLong(CLAVE_MODIFICADO, millis).apply()
+
+    fun marcarModificado() = fijarModificado(System.currentTimeMillis())
+
+    /** Momento de la última subida exitosa a la nube. */
+    fun ultimaSincronizacion(): Long = prefs.getLong(CLAVE_SINCRONIZADO, 0L)
+
+    fun marcarSincronizado(millis: Long) = prefs.edit().putLong(CLAVE_SINCRONIZADO, millis).apply()
+
+    fun reiniciarSincronizacion() {
+        prefs.edit().remove(CLAVE_MODIFICADO).remove(CLAVE_SINCRONIZADO).apply()
+    }
+
+    private companion object {
+        const val CLAVE_TEMA = "modo_tema"
+        const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
+        const val CLAVE_MODO_LOCAL = "modo_local"
+        const val CLAVE_MODIFICADO = "local_modificado"
+        const val CLAVE_SINCRONIZADO = "ultima_sincronizacion"
+    }
+}
