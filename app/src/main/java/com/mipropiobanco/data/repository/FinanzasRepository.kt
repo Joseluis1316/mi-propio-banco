@@ -118,11 +118,59 @@ class FinanzasRepository(private val db: BancoDatabase) {
         if (id == null) movimientoDao.insertar(m) else movimientoDao.actualizar(m)
     }
 
+    /** Categoría de gasto para pagos de deudas (la que tenga "deuda" en el nombre). */
+    suspend fun categoriaPagoDeudas(): CategoriaEntity? = categoriaDao.obtenerTodas().firstOrNull {
+        it.tipo == TipoMovimiento.GASTO.name && com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("deuda")
+    }
+
+    /** Medio por defecto para pagos registrados desde Deudas: Transferencia, o el primero. */
+    suspend fun medioPorDefecto(): MedioPagoEntity? {
+        val todos = medioDao.obtenerTodos()
+        return todos.firstOrNull { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("transferencia") }
+            ?: todos.firstOrNull()
+    }
+
     suspend fun fotoEnUso(ruta: String): Boolean = movimientoDao.obtenerTodos().any { it.foto == ruta }
 
     suspend fun eliminarMovimiento(m: MovimientoEntity) {
         movimientoDao.eliminar(m)
-        m.foto?.let { runCatching { java.io.File(it).delete() } }
+        // La foto se borra solo si ningún otro movimiento la usa (una nómina crea varios con la misma foto).
+        m.foto?.let { ruta -> if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() } }
+    }
+
+    private suspend fun categoriaPorNombre(nombre: String, tipo: TipoMovimiento, icono: String): Long {
+        val existente = categoriaDao.obtenerTodas().firstOrNull {
+            it.tipo == tipo.name && com.mipropiobanco.domain.Interprete.normalizar(it.nombre) ==
+                com.mipropiobanco.domain.Interprete.normalizar(nombre)
+        }
+        return existente?.id ?: categoriaDao.insertar(CategoriaEntity(nombre = nombre, tipo = tipo.name, icono = icono))
+    }
+
+    /** Guarda cada concepto de la nómina: devengos como ingresos y deducciones como gastos. */
+    suspend fun guardarNomina(
+        items: List<com.mipropiobanco.domain.ItemNomina>,
+        medioId: Long,
+        fecha: Long,
+        periodo: String,
+        foto: String?
+    ): Int = db.withTransaction {
+        require(items.isNotEmpty()) { "No hay conceptos para guardar" }
+        require(medioId > 0L) { "Elige el medio por el que te pagan" }
+        items.forEach { item ->
+            val tipo = if (item.esDeduccion) TipoMovimiento.GASTO else TipoMovimiento.INGRESO
+            movimientoDao.insertar(
+                MovimientoEntity(
+                    tipo = tipo.name,
+                    monto = item.monto,
+                    categoriaId = categoriaPorNombre(item.categoria, tipo, item.icono),
+                    medioId = medioId,
+                    fecha = fecha,
+                    nota = listOf(item.concepto, "nómina", periodo.ifBlank { null }).filterNotNull().joinToString(" · ").take(80),
+                    foto = foto
+                )
+            )
+        }
+        items.size
     }
 
     // ---------------- Plantillas fijas ----------------

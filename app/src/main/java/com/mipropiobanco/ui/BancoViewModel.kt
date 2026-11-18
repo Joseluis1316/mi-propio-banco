@@ -17,6 +17,9 @@ import com.mipropiobanco.domain.Ocurrencia
 import com.mipropiobanco.domain.TipoMovimiento
 import com.mipropiobanco.domain.Interprete
 import com.mipropiobanco.domain.Propuesta
+import com.mipropiobanco.domain.InterpreteNomina
+import com.mipropiobanco.domain.ItemNomina
+import com.mipropiobanco.domain.PropuestaNomina
 import com.mipropiobanco.util.Fotos
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -102,13 +105,24 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
      * Guarda la foto reducida, lee el texto del recibo con IA en el celular (ML Kit)
      * y propone el gasto. [temporal] es el archivo de la cámara, que se borra al terminar.
      */
-    fun leerRecibo(origen: Uri, temporal: File?, alListo: (Propuesta) -> Unit) {
+    fun leerRecibo(
+        origen: Uri,
+        temporal: File?,
+        alListo: (Propuesta) -> Unit,
+        alNomina: (PropuestaNomina) -> Unit = {}
+    ) {
         if (_leyendoRecibo.value) return
         viewModelScope.launch {
             _leyendoRecibo.value = true
             try {
                 val ruta = withContext(Dispatchers.IO) { Fotos.guardarReducida(app, origen) }
                 val texto = leerTexto(ruta)
+                // Si es un desprendible de nómina, se separa concepto por concepto.
+                val nomina = InterpreteNomina.interpretar(texto, ruta)
+                if (nomina != null) {
+                    alNomina(nomina)
+                    return@launch
+                }
                 val propuesta = Interprete.interpretarRecibo(texto, ruta, categorias.value, medios.value)
                 if (propuesta.monto == null) _mensajes.emit("No encontré el total del recibo: escríbelo tú")
                 alListo(propuesta)
@@ -127,11 +141,41 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         val reconocedor = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         try {
             val imagen = InputImage.fromFilePath(app, Uri.fromFile(File(ruta)))
-            return reconocedor.process(imagen).await().text
+            val resultado = reconocedor.process(imagen).await()
+            return reconstruirFilas(resultado).ifBlank { resultado.text }
         } finally {
             reconocedor.close()
         }
     }
+
+    /**
+     * ML Kit entrega el texto por bloques (a veces columna por columna). Aquí se rearman
+     * las filas de las tablas juntando las líneas que están a la misma altura.
+     */
+    private fun reconstruirFilas(resultado: com.google.mlkit.vision.text.Text): String {
+        val lineas = resultado.textBlocks.flatMap { it.lines }.mapNotNull { l -> l.boundingBox?.let { l to it } }
+        if (lineas.isEmpty()) return ""
+        val ordenadas = lineas.sortedBy { it.second.centerY() }
+        val filas = mutableListOf<MutableList<Pair<com.google.mlkit.vision.text.Text.Line, android.graphics.Rect>>>()
+        for (item in ordenadas) {
+            val fila = filas.lastOrNull()
+            val alto = item.second.height().coerceAtLeast(1)
+            if (fila != null) {
+                val centroFila = fila.map { it.second.centerY() }.average()
+                if (kotlin.math.abs(item.second.centerY() - centroFila) <= alto * 0.5) {
+                    fila.add(item)
+                    continue
+                }
+            }
+            filas.add(mutableListOf(item))
+        }
+        return filas.joinToString("\n") { fila -> fila.sortedBy { it.second.left }.joinToString("  ") { it.first.text } }
+    }
+
+    fun guardarNomina(items: List<ItemNomina>, medioId: Long, fecha: Long, periodo: String, foto: String?) = ejecutar(
+        accion = { finanzas.guardarNomina(items, medioId, fecha, periodo, foto) },
+        mensaje = { n -> "Nómina guardada: $n conceptos registrados" }
+    )
 
     /** Si el usuario cancela, se borra la foto que no se usó. */
     fun descartarFoto(ruta: String?) {
@@ -379,8 +423,27 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         alTerminar = { alEliminar() }
     )
 
-    fun abonarDeuda(deudaId: Long, monto: Long, fecha: Long) = ejecutar(
-        accion = { repo.abonarDeuda(deudaId, monto, fecha) },
+    /**
+     * Registra un pago a una deuda. Si [comoGasto] es true, también lo anota en Gastos
+     * (categoría "Pago de deudas") para que cuadre el presupuesto del mes.
+     */
+    fun abonarDeuda(deudaId: Long, monto: Long, fecha: Long, comoGasto: Boolean = false) = ejecutar(
+        accion = {
+            val antes = deudas.value.firstOrNull { it.deuda.id == deudaId }
+            val restante = repo.abonarDeuda(deudaId, monto, fecha)
+            if (comoGasto) {
+                val categoria = finanzas.categoriaPagoDeudas()
+                val medio = finanzas.medioPorDefecto()
+                if (categoria != null && medio != null) {
+                    val aplicado = antes?.let { minOf(monto, it.saldo) } ?: monto
+                    finanzas.guardarMovimiento(
+                        id = null, tipo = TipoMovimiento.GASTO, monto = aplicado, categoriaId = categoria.id,
+                        medioId = medio.id, fecha = fecha, nota = "Pago a ${antes?.deuda?.acreedor ?: "deuda"}", repetir = null
+                    )
+                }
+            }
+            restante
+        },
         mensaje = { saldo ->
             if (saldo == 0L) "¡Deuda liquidada! Su pago ahora se suma a la siguiente (bola de nieve)"
             else "Pago registrado. Saldo pendiente: ${Formato.cop(saldo)}"

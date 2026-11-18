@@ -130,6 +130,8 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val categorias by vm.categorias.collectAsStateWithLifecycle()
     val medios by vm.medios.collectAsStateWithLifecycle()
     val plantillas by vm.plantillas.collectAsStateWithLifecycle()
+    val deudas by vm.deudas.collectAsStateWithLifecycle()
+    val deudasActivas = deudas.filter { !it.pagada }
 
     var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val mes = YearMonth.parse(mesTexto)
@@ -138,6 +140,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     var editando by remember { mutableStateOf<MovimientoEntity?>(null) }
     var registrando by remember { mutableStateOf<Ocurrencia?>(null) }
     var propuesta by remember { mutableStateOf<Propuesta?>(null) }
+    var nomina by remember { mutableStateOf<com.mipropiobanco.domain.PropuestaNomina?>(null) }
     var escribir by remember { mutableStateOf(false) }
     var elegirFoto by remember { mutableStateOf(false) }
     val leyendo by vm.leyendoRecibo.collectAsStateWithLifecycle()
@@ -147,13 +150,13 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val archivo = archivoCamara
         if (ok && archivo != null) {
-            vm.leerRecibo(android.net.Uri.fromFile(archivo), archivo) { propuesta = it }
+            vm.leerRecibo(android.net.Uri.fromFile(archivo), archivo, { propuesta = it }, { nomina = it })
         } else {
             archivo?.delete()
         }
     }
     val galeria = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.leerRecibo(uri, null) { propuesta = it }
+        if (uri != null) vm.leerRecibo(uri, null, { propuesta = it }, { nomina = it })
     }
     val voz = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val texto = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
@@ -313,14 +316,26 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
 
     if (nuevoTipo.isNotEmpty() || editando != null || propuesta != null) {
         val p = propuesta
+        // Si el recibo o la frase mencionan a quién le debes (ej. "Sistecrédito"), se sugiere esa deuda.
+        val deudaSugerida = p?.let { prop ->
+            val texto = com.mipropiobanco.domain.Interprete.normalizar(prop.textoOriginal + " " + prop.nota)
+            deudasActivas.firstOrNull { d ->
+                com.mipropiobanco.domain.Interprete.normalizar(d.deuda.acreedor)
+                    .split(" ").filter { it.length >= 4 }.any { texto.contains(it) }
+            }?.deuda?.id
+        }
         DialogoMovimiento(
             existente = editando,
             propuesta = p,
+            deudas = deudasActivas,
+            deudaSugerida = deudaSugerida,
             tipoInicial = TipoMovimiento.desde(editando?.tipo ?: p?.tipo?.name ?: nuevoTipo),
             categorias = categorias,
             medios = medios,
-            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto ->
+            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto, deudaId ->
                 vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto)
+                // Además baja el saldo de la deuda elegida (sin volver a anotar el gasto).
+                if (deudaId != null && editando == null) vm.abonarDeuda(deudaId, monto, fecha, comoGasto = false)
             },
             alEliminar = editando?.let { m -> { vm.eliminarMovimiento(m) } },
             alCancelar = { if (editando == null) vm.descartarFoto(p?.foto) },
@@ -329,6 +344,15 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 editando = null
                 propuesta = null
             }
+        )
+    }
+    nomina?.let { n ->
+        DialogoNomina(
+            nomina = n,
+            medios = medios,
+            alGuardar = { items, medio, fecha -> vm.guardarNomina(items, medio, fecha, n.periodo, n.foto) },
+            alCancelar = { vm.descartarFoto(n.foto) },
+            alCerrar = { nomina = null }
         )
     }
     if (escribir) {
@@ -516,10 +540,12 @@ fun SelectorPeriodicidad(seleccion: Periodicidad, alElegir: (Periodicidad) -> Un
 private fun DialogoMovimiento(
     existente: MovimientoEntity?,
     propuesta: Propuesta?,
+    deudas: List<com.mipropiobanco.domain.DeudaConAbonos>,
+    deudaSugerida: Long?,
     tipoInicial: TipoMovimiento,
     categorias: List<CategoriaEntity>,
     medios: List<MedioPagoEntity>,
-    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?) -> Unit,
+    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?, Long?) -> Unit,
     alEliminar: (() -> Unit)?,
     alCancelar: () -> Unit,
     alCerrar: () -> Unit
@@ -536,6 +562,15 @@ private fun DialogoMovimiento(
     var nota by rememberSaveable { mutableStateOf(existente?.nota ?: propuesta?.nota.orEmpty()) }
     val foto = existente?.foto ?: propuesta?.foto
     var verFoto by remember { mutableStateOf(false) }
+    var deudaId by rememberSaveable { mutableStateOf(deudaSugerida) }
+    // Si la deuda sugerida existe y no hay categoría, se pone "Pago de deudas".
+    if (deudaSugerida != null && categoriaId == 0L) {
+        categorias.firstOrNull { it.tipo == TipoMovimiento.GASTO.name && com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("deuda") }
+            ?.let { categoriaId = it.id }
+    }
+    val esPagoDeDeuda = tipo == TipoMovimiento.GASTO && existente == null && deudas.isNotEmpty() &&
+        (deudaId != null || categorias.firstOrNull { it.id == categoriaId }
+            ?.let { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("deuda") } == true)
     var repetir by rememberSaveable { mutableStateOf(false) }
     var periodicidad by rememberSaveable { mutableStateOf(Periodicidad.MENSUAL) }
     var automatica by rememberSaveable { mutableStateOf(true) }
@@ -592,6 +627,19 @@ private fun DialogoMovimiento(
                 CampoMonto(valor = monto, alCambiar = { monto = it }, etiqueta = "Monto")
                 Text("Categoría", style = MaterialTheme.typography.labelLarge)
                 SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                if (esPagoDeDeuda) {
+                    Text("¿A cuál deuda le abonas? (baja su saldo)", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = deudaId == null, onClick = { deudaId = null }, label = { Text("Ninguna") })
+                        deudas.forEach { d ->
+                            FilterChip(
+                                selected = deudaId == d.deuda.id,
+                                onClick = { deudaId = d.deuda.id },
+                                label = { Text("${d.deuda.acreedor} · ${Formato.cop(d.saldo)}") }
+                            )
+                        }
+                    }
+                }
                 Text(if (tipo == TipoMovimiento.GASTO) "¿Cómo pagaste?" else "¿Cómo lo recibiste?", style = MaterialTheme.typography.labelLarge)
                 SelectorMedio(medios, medioId) { medioId = it }
                 SelectorFecha("Fecha", fecha, { fecha = it })
@@ -630,7 +678,11 @@ private fun DialogoMovimiento(
         },
         confirmButton = {
             TextButton(enabled = valido, onClick = {
-                alGuardar(tipo, montoV, categoriaId, medioId, fecha, nota, if (repetir) DatosRepeticion(periodicidad, automatica) else null, foto)
+                alGuardar(
+                    tipo, montoV, categoriaId, medioId, fecha, nota,
+                    if (repetir) DatosRepeticion(periodicidad, automatica) else null, foto,
+                    if (esPagoDeDeuda) deudaId else null
+                )
                 alCerrar()
             }) { Text("Guardar") }
         },
@@ -732,4 +784,86 @@ private fun DialogoEscribir(alListo: (String) -> Unit, alCerrar: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
     )
+}
+
+/** Desglose del desprendible: el usuario revisa cada concepto antes de guardarlo. */
+@Composable
+private fun DialogoNomina(
+    nomina: com.mipropiobanco.domain.PropuestaNomina,
+    medios: List<MedioPagoEntity>,
+    alGuardar: (List<com.mipropiobanco.domain.ItemNomina>, Long, Long) -> Unit,
+    alCancelar: () -> Unit,
+    alCerrar: () -> Unit
+) {
+    val incluidos = remember { androidx.compose.runtime.mutableStateListOf(*nomina.items.map { true }.toTypedArray()) }
+    var fecha by rememberSaveable { mutableStateOf(Formato.aMillis(nomina.fecha)) }
+    var medioId by rememberSaveable {
+        mutableStateOf(
+            medios.firstOrNull { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("transferencia") }?.id
+                ?: medios.firstOrNull()?.id ?: 0L
+        )
+    }
+    val elegidos = nomina.items.filterIndexed { i, _ -> incluidos.getOrElse(i) { true } }
+    val devengado = elegidos.filter { !it.esDeduccion }.sumOf { it.monto }
+    val deducido = elegidos.filter { it.esDeduccion }.sumOf { it.monto }
+    val cancelar: () -> Unit = {
+        alCancelar()
+        alCerrar()
+    }
+    AlertDialog(
+        onDismissRequest = cancelar,
+        title = { Text("✨ Desprendible de nómina") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (nomina.periodo.isNotBlank()) Text(nomina.periodo, style = MaterialTheme.typography.bodySmall)
+                Text("Devengado (ingresos)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                nomina.items.forEachIndexed { i, item ->
+                    if (!item.esDeduccion) FilaNomina(item, incluidos[i]) { incluidos[i] = it }
+                }
+                Text("Deducciones (gastos)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                nomina.items.forEachIndexed { i, item ->
+                    if (item.esDeduccion) FilaNomina(item, incluidos[i]) { incluidos[i] = it }
+                }
+                Spacer(Modifier.height(4.dp))
+                FilaResumen("Total devengado", Formato.cop(devengado))
+                FilaResumen("Total deducciones", "−" + Formato.cop(deducido))
+                FilaResumen("Neto", Formato.cop(devengado - deducido), destacado = true)
+                if (nomina.neto != null) {
+                    val cuadra = nomina.neto == devengado - deducido
+                    Text(
+                        if (cuadra) "✓ Cuadra con el neto del desprendible (${Formato.cop(nomina.neto)})"
+                        else "⚠ El desprendible dice ${Formato.cop(nomina.neto)}: revisa los conceptos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (cuadra) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+                Text("¿Cómo te pagan?", style = MaterialTheme.typography.labelLarge)
+                SelectorMedio(medios, medioId) { medioId = it }
+                SelectorFecha("Fecha de pago", fecha, { fecha = it })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = elegidos.isNotEmpty() && medioId > 0L, onClick = {
+                alGuardar(elegidos, medioId, fecha)
+                alCerrar()
+            }) { Text("Guardar ${elegidos.size}") }
+        },
+        dismissButton = { TextButton(onClick = cancelar) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun FilaNomina(item: com.mipropiobanco.domain.ItemNomina, incluido: Boolean, alCambiar: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = incluido, onCheckedChange = alCambiar)
+        Column(Modifier.weight(1f)) {
+            Text("${item.icono} ${item.concepto}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.categoria, style = MaterialTheme.typography.labelSmall)
+        }
+        Text(
+            (if (item.esDeduccion) "−" else "+") + Formato.cop(item.monto),
+            fontWeight = FontWeight.SemiBold,
+            color = if (item.esDeduccion) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        )
+    }
 }

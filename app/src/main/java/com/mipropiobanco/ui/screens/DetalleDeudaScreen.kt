@@ -164,7 +164,7 @@ fun DetalleDeudaScreen(vm: BancoViewModel, deudaId: Long, alVolver: () -> Unit) 
         DialogoAbono(
             sugerido = pagoSugerido,
             saldo = item.saldo,
-            alConfirmar = { monto, fecha -> vm.abonarDeuda(deudaId, monto, fecha) },
+            alConfirmar = { monto, fecha, comoGasto -> vm.abonarDeuda(deudaId, monto, fecha, comoGasto) },
             alCerrar = { pagar = false }
         )
     }
@@ -198,8 +198,9 @@ fun DetalleDeudaScreen(vm: BancoViewModel, deudaId: Long, alVolver: () -> Unit) 
 }
 
 @Composable
-private fun DialogoAbono(sugerido: Long, saldo: Long, alConfirmar: (Long, Long) -> Unit, alCerrar: () -> Unit) {
+private fun DialogoAbono(sugerido: Long, saldo: Long, alConfirmar: (Long, Long, Boolean) -> Unit, alCerrar: () -> Unit) {
     var monto by rememberSaveable { mutableStateOf(sugerido.toString()) }
+    var comoGasto by rememberSaveable { mutableStateOf(true) }
     var fecha by rememberSaveable { mutableStateOf(Formato.hoyMillis()) }
     val montoV = monto.toLongOrNull() ?: 0L
     AlertDialog(
@@ -214,6 +215,10 @@ private fun DialogoAbono(sugerido: Long, saldo: Long, alConfirmar: (Long, Long) 
                     apoyo = "Sugerido por la bola de nieve: ${Formato.cop(sugerido)}"
                 )
                 SelectorFecha("Fecha", fecha, { fecha = it })
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = comoGasto, onCheckedChange = { comoGasto = it })
+                    Text("Anotarlo también en Gastos (Pago de deudas)", style = MaterialTheme.typography.bodySmall)
+                }
                 if (montoV >= saldo) {
                     Text(
                         "Con este pago liquidas la deuda 🎉 (se registra ${Formato.cop(saldo)})",
@@ -225,7 +230,7 @@ private fun DialogoAbono(sugerido: Long, saldo: Long, alConfirmar: (Long, Long) 
         },
         confirmButton = {
             TextButton(enabled = montoV > 0L, onClick = {
-                alConfirmar(montoV, fecha)
+                alConfirmar(montoV, fecha, comoGasto)
                 alCerrar()
             }) { Text("Registrar") }
         },

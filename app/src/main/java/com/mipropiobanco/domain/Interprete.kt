@@ -322,3 +322,97 @@ object Interprete {
         )
     }
 }
+
+// ---------------- Desprendible de nómina ----------------
+
+/** Un concepto del desprendible: devengo (ingreso) o deducción (gasto). */
+data class ItemNomina(
+    val concepto: String,
+    val monto: Long,
+    val esDeduccion: Boolean,
+    val categoria: String,
+    val icono: String
+)
+
+data class PropuestaNomina(
+    val items: List<ItemNomina>,
+    val neto: Long?,
+    val fecha: LocalDate,
+    val periodo: String,
+    val foto: String?
+) {
+    val devengado: Long get() = items.filter { !it.esDeduccion }.sumOf { it.monto }
+    val deducido: Long get() = items.filter { it.esDeduccion }.sumOf { it.monto }
+    val netoCalculado: Long get() = devengado - deducido
+    val cuadra: Boolean get() = neto != null && neto == netoCalculado
+}
+
+object InterpreteNomina {
+    private data class Regla(val palabras: List<String>, val deduccion: Boolean, val categoria: String, val icono: String)
+
+    /** El orden importa: la primera regla que coincida decide. */
+    private val REGLAS = listOf(
+        Regla(listOf("salud", "eps", "pension", "solidaridad", "fsp", "seguridad social"), true, "Salud y pensión", "🏥"),
+        Regla(listOf("retencion", "retefuente", "rete fuente"), true, "Retención en la fuente", "🧾"),
+        Regla(listOf("libranza", "prestamo", "credito", "embargo", "cooperativa", "fondo de empleados", "anticipo"), true, "Pago de deudas", "💳"),
+        Regla(listOf("descuento", "deduccion", "aporte voluntario", "sindicato", "poliza", "seguro", "medicina prepagada", "afc"), true, "Otras deducciones de nómina", "✂️"),
+        Regla(listOf("hora extra", "horas extra", "extras", "recargo", "dominical", "festivo", "hed", "hen"), false, "Horas extras y recargos", "⏰"),
+        Regla(listOf("auxilio", "transporte", "conectividad", "alimentacion"), false, "Auxilio de transporte", "🚌"),
+        Regla(listOf("bonificacion", "bono", "comision", "prima", "vacaciones", "incapacidad", "licencia", "viatico", "cesantias", "intereses"), false, "Bonificaciones y comisiones", "🎁"),
+        Regla(listOf("salario", "sueldo", "basico", "jornal"), false, "Salario", "💼")
+    )
+
+    private val FILAS_IGNORADAS = listOf(
+        "total", "neto", "fecha", "cedula", "ficha", "nombre", "cargo", "departamento", "codigo", "concepto",
+        "periodo", "ingreso", "nit", "banco", "cuenta", "firma"
+    )
+
+    fun esNomina(textoOcr: String): Boolean {
+        val t = Interprete.normalizar(textoOcr)
+        val encabezado = listOf("nomina", "recibo de pago", "desprendible", "colilla", "comprobante de pago de nomina")
+            .any { t.contains(it) }
+        val conceptos = listOf("salud", "pension", "devengado", "asignaciones", "deducciones", "deduciones", "salario basico")
+            .count { t.contains(it) }
+        return encabezado && conceptos >= 2
+    }
+
+    private val REGEX_VALOR = Regex("(\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{2})?)(?!\\d)")
+
+    private fun valor(texto: String): Long? {
+        val t = texto.trim()
+        val sinCentavos = if (Regex(".*[.,]\\d{2}$").matches(t) && t.length > 3) t.substring(0, t.length - 3) else t
+        return sinCentavos.replace(".", "").replace(",", "").toLongOrNull()
+    }
+
+    fun interpretar(textoOcr: String, foto: String?, hoy: LocalDate = LocalDate.now()): PropuestaNomina? {
+        if (!esNomina(textoOcr)) return null
+        val filas = textoOcr.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val items = mutableListOf<ItemNomina>()
+        var neto: Long? = null
+        for (fila in filas) {
+            val n = Interprete.normalizar(fila)
+            val montos = REGEX_VALOR.findAll(fila).mapNotNull { valor(it.groupValues[1]) }.filter { it >= 1_000L }.toList()
+            if (n.contains("neto")) {
+                montos.lastOrNull()?.let { neto = it }
+                continue
+            }
+            if (montos.isEmpty() || FILAS_IGNORADAS.any { n.startsWith(it) || n.contains("$it ") && n.indexOf(it) < 3 }) continue
+            if (n.contains("total")) continue
+            val regla = REGLAS.firstOrNull { r -> r.palabras.any { n.contains(it) } } ?: continue
+            // El valor del concepto es el último número de la fila (columna Asignaciones o Deducciones).
+            val concepto = fila.replace(Regex("^\\d{3,6}\\s+"), "")
+                .replace(REGEX_VALOR, "").replace(Regex("\\s\\d+[.,]\\d{1,2}(\\s|$)"), " ")
+                .replace(Regex("\\s+"), " ").trim()
+                .lowercase().replaceFirstChar { it.uppercase() }
+            items.add(ItemNomina(concepto.ifEmpty { regla.categoria }, montos.last(), regla.deduccion, regla.categoria, regla.icono))
+        }
+        if (items.isEmpty()) return null
+        val t = Interprete.normalizar(textoOcr)
+        val fecha = Regex("fecha\\s*:?\\s*(\\d{1,2})[/-](\\d{1,2})[/-](\\d{4})").find(t)?.let { m ->
+            runCatching { LocalDate.of(m.groupValues[3].toInt(), m.groupValues[2].toInt(), m.groupValues[1].toInt()) }.getOrNull()
+        } ?: Interprete.detectarFecha(t, hoy)
+        val periodo = Regex("(\\d{1,2}/\\d{1,2}/\\d{4})\\s*al\\s*(\\d{1,2}/\\d{1,2}/\\d{4})").find(t)
+            ?.let { "Del ${it.groupValues[1]} al ${it.groupValues[2]}" }.orEmpty()
+        return PropuestaNomina(items, neto, if (fecha.isAfter(hoy)) hoy else fecha, periodo, foto)
+    }
+}
