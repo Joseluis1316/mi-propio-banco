@@ -32,6 +32,8 @@ import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.screens.AjustesScreen
 import com.mipropiobanco.ui.screens.AportesScreen
 import com.mipropiobanco.ui.screens.DashboardScreen
+import com.mipropiobanco.ui.screens.LoginScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.DetalleDeudaScreen
 import com.mipropiobanco.ui.screens.DetallePrestamoScreen
@@ -76,6 +78,10 @@ fun AppNavegacion(vm: BancoViewModel) {
         vm.mensajes.collect { snackbar.showSnackbar(it) }
     }
 
+    val correo by vm.correo.collectAsStateWithLifecycle()
+    val modoLocal by vm.modoLocal.collectAsStateWithLifecycle()
+    val pedirLogin = correo == null && !modoLocal
+
     val entrada by nav.currentBackStackEntryAsState()
     val rutaActual = entrada?.destination?.route.orEmpty()
     val pestanaActual = destinosPrincipales.firstOrNull { d ->
@@ -85,7 +91,7 @@ fun AppNavegacion(vm: BancoViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (pestanaActual != null) {
+            if (pestanaActual != null && !pedirLogin) {
                 NavigationBar {
                     destinosPrincipales.forEach { d ->
                         NavigationBarItem(
@@ -99,7 +105,9 @@ fun AppNavegacion(vm: BancoViewModel) {
             }
         }
     ) { relleno ->
-        NavHost(
+        if (pedirLogin) {
+            androidx.compose.foundation.layout.Box(Modifier.padding(relleno)) { LoginScreen(vm) }
+        } else NavHost(
             navController = nav,
             startDestination = Rutas.INICIO,
             modifier = Modifier.padding(relleno)

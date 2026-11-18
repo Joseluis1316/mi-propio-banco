@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Sin permiso de INTERNET: la app es 100% offline y los datos nunca salen del teléfono. -->
+<!-- Funciona sin internet; el permiso solo se usa para iniciar sesión y respaldar en la nube. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".MiPropioBancoApp"

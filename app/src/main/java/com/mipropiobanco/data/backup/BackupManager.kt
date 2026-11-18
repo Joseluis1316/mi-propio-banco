@@ -223,6 +223,27 @@ class BackupManager(
         return Datos(aportes, tipos, prestamos, pagos, deudas, abonos)
     }
 
+    /** true si este celular no tiene aportes, préstamos ni deudas registrados. */
+    suspend fun estaVacio(): Boolean = withContext(Dispatchers.IO) {
+        db.aporteDao().obtenerTodos().isEmpty() &&
+            db.prestamoDao().obtenerTodos().isEmpty() &&
+            db.deudaDao().obtenerTodas().isEmpty()
+    }
+
+    /** Deja la app como recién instalada (se usa al cerrar sesión). */
+    suspend fun borrarTodo() = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            db.pagoDao().borrarTodo()
+            db.prestamoDao().borrarTodo()
+            db.aporteDao().borrarTodo()
+            db.abonoDeudaDao().borrarTodo()
+            db.deudaDao().borrarTodo()
+            db.tipoPrestamoDao().borrarTodo()
+            db.tipoPrestamoDao().insertarTodos(BancoDatabase.TIPOS_INICIALES)
+        }
+        preferencias.cambiarPresupuestoDeudas(0L)
+    }
+
     /** CSV separado por punto y coma (lo abre Excel en español directamente). */
     suspend fun exportarCsv(): String = withContext(Dispatchers.IO) {
         val prestamos = db.prestamoDao().obtenerTodos().associateBy { it.id }

@@ -1,6 +1,6 @@
 # Mi Propio Banco (Android · Kotlin · Jetpack Compose · Room)
 
-App 100% offline para administrar tu fondo de autofinanciamiento y salir de deudas. No pide permiso de internet: los datos solo existen en tu teléfono.
+App para administrar tu fondo de autofinanciamiento y salir de deudas. Funciona sin internet y, con cuenta, respalda todo en la nube.
 
 ## Funciones
 
@@ -9,6 +9,16 @@ App 100% offline para administrar tu fondo de autofinanciamiento y salir de deud
 - **Cronómetro y mora:** cuenta regresiva hasta cada vencimiento; si pagas tarde se cobra interés de mora por día de atraso, que también entra a la bóveda.
 - **Deudas con terceros (bola de nieve):** orden de ataque de menor a mayor saldo, pago mínimo en las demás y excedente al objetivo; cuando liquidas una, su pago se suma a la siguiente. Muestra cuánto pagar este mes, cuándo quedas libre y el cronómetro de cada fecha de pago.
 - **Respaldo:** exportar/importar JSON y exportar CSV.
+
+## Cuenta y nube (Firebase)
+
+La app funciona sin internet con su base local. Si inicias sesión con correo, cada cambio se sube solo a Firestore (documento privado `usuarios/{tu-uid}`), y al instalarla en otro celular basta con iniciar sesión.
+
+Configuración (una sola vez):
+1. En console.firebase.google.com crea un proyecto y agrega una app **Android** con paquete `com.mipropiobanco`.
+2. Descarga `google-services.json` y ponlo en la carpeta `app/`.
+3. En *Authentication › Sign-in method* activa **Correo electrónico/contraseña**.
+4. En *Firestore Database* crea la base (modo producción) y en *Reglas* pega el contenido de `firestore.rules`.
 
 ## Actualización automática
 

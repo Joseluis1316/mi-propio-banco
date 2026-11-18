@@ -9,6 +9,10 @@ import com.mipropiobanco.data.local.AbonoDeudaEntity
 import com.mipropiobanco.data.local.AporteEntity
 import com.mipropiobanco.data.local.TipoPrestamoEntity
 import com.mipropiobanco.data.prefs.ModoTema
+import com.mipropiobanco.data.sync.EstadoNube
+import com.mipropiobanco.data.sync.SincronizacionNube
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.mipropiobanco.domain.BolaDeNieve
 import com.mipropiobanco.domain.DeudaConAbonos
 import com.mipropiobanco.domain.Periodicidad
@@ -34,6 +38,51 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     private val repo = app.repositorio
     private val respaldo = app.respaldo
     private val preferencias = app.preferencias
+    private val nube = app.nube
+
+    // ---------- Cuenta y nube ----------
+
+    val correo: StateFlow<String?> = nube.correo
+    val estadoNube: StateFlow<EstadoNube> = nube.estado
+    val modoLocal: StateFlow<Boolean> = preferencias.modoLocal
+
+    private val _procesandoCuenta = MutableStateFlow(false)
+    val procesandoCuenta: StateFlow<Boolean> = _procesandoCuenta.asStateFlow()
+
+    private fun accionCuenta(exito: String, accion: suspend () -> Unit) {
+        if (_procesandoCuenta.value) return
+        viewModelScope.launch {
+            _procesandoCuenta.value = true
+            try {
+                accion()
+                _mensajes.emit(exito)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _mensajes.emit(SincronizacionNube.mensajeError(e))
+            } finally {
+                _procesandoCuenta.value = false
+            }
+        }
+    }
+
+    fun iniciarSesion(correo: String, clave: String) =
+        accionCuenta("Sesión iniciada: tus datos se guardan en la nube") { nube.iniciarSesion(correo, clave) }
+
+    fun registrar(correo: String, clave: String) =
+        accionCuenta("Cuenta creada: tus datos se guardan en la nube") { nube.registrar(correo, clave) }
+
+    fun recuperarClave(correo: String) =
+        accionCuenta("Te enviamos un correo para cambiar la contraseña") { nube.recuperarClave(correo) }
+
+    fun cerrarSesion() =
+        accionCuenta("Sesión cerrada. Tus datos quedaron guardados en la nube") { nube.cerrarSesion() }
+
+    fun sincronizarAhora() = accionCuenta("Sincronización terminada") { nube.subirSiHaySesion() }
+
+    fun continuarSinCuenta() = preferencias.cambiarModoLocal(true)
+
+    fun irAIniciarSesion() = preferencias.cambiarModoLocal(false)
 
     val resumen: StateFlow<ResumenBanco> =
         repo.resumen.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ResumenBanco())

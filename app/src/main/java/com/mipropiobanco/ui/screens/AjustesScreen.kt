@@ -40,6 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mipropiobanco.data.local.TipoPrestamoEntity
 import com.mipropiobanco.data.prefs.ModoTema
+import com.mipropiobanco.data.sync.EstadoNube
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Button
 import com.mipropiobanco.ui.components.CampoTasa
 import com.mipropiobanco.ui.components.FilaResumen
 import androidx.compose.material.icons.filled.Add
@@ -64,6 +71,10 @@ fun AjustesScreen(vm: BancoViewModel) {
     val modo by vm.modoTema.collectAsStateWithLifecycle()
     var confirmarImportacion by remember { mutableStateOf(false) }
     val tipos by vm.tipos.collectAsStateWithLifecycle()
+    val correo by vm.correo.collectAsStateWithLifecycle()
+    val estadoNube by vm.estadoNube.collectAsStateWithLifecycle()
+    val procesando by vm.procesandoCuenta.collectAsStateWithLifecycle()
+    var confirmarSalir by remember { mutableStateOf(false) }
     var tipoEditando by remember { mutableStateOf<TipoPrestamoEntity?>(null) }
     var tipoNuevo by remember { mutableStateOf(false) }
 
@@ -85,6 +96,45 @@ fun AjustesScreen(vm: BancoViewModel) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                Seccion("Cuenta y nube") {
+                    val cuenta = correo
+                    if (cuenta != null) {
+                        val (icono, texto) = when (val e = estadoNube) {
+                            is EstadoNube.AlDia -> Icons.Filled.CloudDone to "Datos guardados en la nube · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT, Formato.localeCO).format(java.util.Date(e.cuando))}"
+                            is EstadoNube.Sincronizando -> Icons.Filled.CloudSync to "Sincronizando…"
+                            is EstadoNube.Pendiente -> Icons.Filled.CloudOff to e.motivo
+                            EstadoNube.SinCuenta -> Icons.Filled.CloudOff to "Sin cuenta"
+                        }
+                        Text("Conectado como $cuenta", fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(icono, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text("  $texto", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(
+                            "Cada cambio se sube solo. Si cambias de celular, instala la app e inicia sesión con este correo.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        FilledTonalButton(onClick = { vm.sincronizarAhora() }, enabled = !procesando, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.Sync, contentDescription = null)
+                            Text("  Sincronizar ahora")
+                        }
+                        OutlinedButton(onClick = { confirmarSalir = true }, enabled = !procesando, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.Logout, contentDescription = null)
+                            Text("  Cerrar sesión")
+                        }
+                    } else {
+                        Text(
+                            "Estás usando la app sin cuenta: los datos solo están en este celular.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Button(onClick = { vm.irAIniciarSesion() }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.CloudSync, contentDescription = null)
+                            Text("  Iniciar sesión o crear cuenta")
+                        }
+                    }
+                }
+            }
             item {
                 Seccion("Apariencia") {
                     Column(Modifier.selectableGroup()) {
@@ -137,8 +187,8 @@ fun AjustesScreen(vm: BancoViewModel) {
             item {
                 Seccion("Respaldo de datos") {
                     Text(
-                        "Tus datos viven solo en este teléfono. Exporta un respaldo con frecuencia y guárdalo " +
-                            "en otro lugar (correo, Drive o un computador).",
+                        "Con cuenta ya tienes respaldo automático. Además puedes exportar un archivo " +
+                            "para guardarlo donde quieras o abrirlo en Excel.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(Modifier.height(8.dp))
@@ -182,13 +232,33 @@ fun AjustesScreen(vm: BancoViewModel) {
             item {
                 Seccion("Acerca de") {
                     Text(
-                        "Mi Propio Banco · 100% offline, sin servidores ni permisos de internet. " +
+                        "Mi Propio Banco · funciona sin internet; con cuenta, cada cambio se respalda en la nube (Firebase). " +
                             "Montos en pesos colombianos sin decimales; cuotas por sistema francés.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
+    }
+
+    if (confirmarSalir) {
+        AlertDialog(
+            onDismissRequest = { confirmarSalir = false },
+            title = { Text("¿Cerrar sesión?") },
+            text = {
+                Text(
+                    "Primero se suben tus datos a la nube y luego se borran de este celular. " +
+                        "Los recuperas al volver a iniciar sesión. Necesitas internet."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmarSalir = false
+                    vm.cerrarSesion()
+                }) { Text("Cerrar sesión") }
+            },
+            dismissButton = { TextButton(onClick = { confirmarSalir = false }) { Text("Cancelar") } }
+        )
     }
 
     if (tipoNuevo || tipoEditando != null) {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "594527257952",
+    "project_id": "mi-propio-banco-4b941",
+    "storage_bucket": "mi-propio-banco-4b941.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:594527257952:android:d88243a37441b93bf78a05",
+        "android_client_info": {
+          "package_name": "com.mipropiobanco"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAi_I602pHBAp0L66gKADJNM4aoarMvXi8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
