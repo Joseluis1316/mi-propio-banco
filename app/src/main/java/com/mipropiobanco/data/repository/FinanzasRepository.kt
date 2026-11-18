@@ -171,6 +171,52 @@ class FinanzasRepository(private val db: BancoDatabase) {
         m.foto?.let { ruta -> if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() } }
     }
 
+    /** Categoría de gasto para el dinero que sacas en efectivo (se da por gastado al retirarlo). */
+    suspend fun categoriaEfectivo(): Long = categoriaPorNombre("Efectivo (retiros)", TipoMovimiento.GASTO, "💵")
+
+    /** Lo que encontraría la limpieza: duplicados exactos y traslados a efectivo. */
+    data class Limpieza(val duplicados: List<MovimientoEntity>, val retiros: List<MovimientoEntity>)
+
+    suspend fun revisarLimpieza(): Limpieza {
+        val todos = movimientoDao.obtenerTodos()
+        val efectivo = medioDao.obtenerTodos()
+            .filter { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("efectivo") }
+            .map { it.id }.toSet()
+        // Duplicado = mismo tipo, monto, categoría, medio, día y nota. Se conserva el primero.
+        val duplicados = todos
+            .groupBy {
+                listOf(
+                    it.tipo, it.monto, it.categoriaId, it.medioId, it.medioDestinoId,
+                    Formato.aLocalDate(it.fecha),
+                    com.mipropiobanco.domain.Interprete.normalizar(it.nota).trim()
+                )
+            }
+            .values.flatMap { grupo -> grupo.sortedBy { it.id }.drop(1) }
+        val ids = duplicados.map { it.id }.toSet()
+        val retiros = todos.filter {
+            it.id !in ids && it.tipo == TipoMovimiento.TRASLADO.name && it.medioDestinoId in efectivo
+        }
+        return Limpieza(duplicados, retiros)
+    }
+
+    /** Borra los duplicados y convierte los traslados a efectivo en gastos. Devuelve (borrados, convertidos). */
+    suspend fun aplicarLimpieza(): Pair<Int, Int> {
+        val l = revisarLimpieza()
+        val categoria = if (l.retiros.isNotEmpty()) categoriaEfectivo() else 0L
+        db.withTransaction {
+            l.duplicados.forEach { movimientoDao.eliminar(it) }
+            l.retiros.forEach {
+                movimientoDao.actualizar(
+                    it.copy(tipo = TipoMovimiento.GASTO.name, categoriaId = categoria, medioDestinoId = null)
+                )
+            }
+        }
+        l.duplicados.mapNotNull { it.foto }.distinct().forEach { ruta ->
+            if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() }
+        }
+        return l.duplicados.size to l.retiros.size
+    }
+
     private suspend fun categoriaPorNombre(nombre: String, tipo: TipoMovimiento, icono: String): Long {
         val existente = categoriaDao.obtenerTodas().firstOrNull {
             it.tipo == tipo.name && com.mipropiobanco.domain.Interprete.normalizar(it.nombre) ==

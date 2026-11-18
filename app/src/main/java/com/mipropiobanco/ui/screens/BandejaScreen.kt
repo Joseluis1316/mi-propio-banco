@@ -48,6 +48,7 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
     val deudas by vm.deudas.collectAsStateWithLifecycle()
     val correo by vm.correo.collectAsStateWithLifecycle()
     var propuesta by remember { mutableStateOf<Propuesta?>(null) }
+    var limpieza by remember { mutableStateOf<com.mipropiobanco.data.repository.FinanzasRepository.Limpieza?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         Encabezado("📥 Correos por revisar", alVolver = alVolver)
@@ -55,6 +56,23 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (correo != null) {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Los duplicados se descartan solos y los retiros se anotan como gasto.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { vm.revisarLimpieza { limpieza = it } }) { Text("🧹 Limpiar") }
+                        }
+                    }
+                }
+            }
             if (correo == null) {
                 item {
                     EstadoVacio(
@@ -117,7 +135,7 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
                                 )
                             }
                             if (m.esRetiro) {
-                                Text("Retiro = traslado de tu cuenta a efectivo (no es gasto).", style = MaterialTheme.typography.bodySmall)
+                                Text("Retiro: el efectivo se da por gastado de una vez (categoría Efectivo).", style = MaterialTheme.typography.bodySmall)
                             }
                             if (duplicado != null) {
                                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
@@ -139,6 +157,43 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
                 }
             }
         }
+    }
+
+    limpieza?.let { l ->
+        val nada = l.duplicados.isEmpty() && l.retiros.isEmpty()
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { limpieza = null },
+            title = { Text("🧹 Limpiar mis gastos") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (nada) {
+                        Text("No hay movimientos repetidos ni retiros por convertir. Todo está en orden.")
+                    } else {
+                        if (l.duplicados.isNotEmpty()) {
+                            Text("Se borrarán ${l.duplicados.size} movimientos repetidos (mismo tipo, monto, categoría, medio, día y nota). Se conserva uno de cada uno:", fontWeight = FontWeight.SemiBold)
+                            l.duplicados.take(6).forEach {
+                                Text("• ${Formato.fecha(it.fecha)} · ${Formato.cop(it.monto)} · ${it.nota.take(28)}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (l.duplicados.size > 6) Text("…y ${l.duplicados.size - 6} más", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (l.retiros.isNotEmpty()) {
+                            Text("${l.retiros.size} traslados a efectivo (${Formato.cop(l.retiros.sumOf { it.monto })}) pasarán a gasto en la categoría Efectivo (retiros).", fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("Borrar no se puede deshacer.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                if (nada) {
+                    TextButton(onClick = { limpieza = null }) { Text("Listo") }
+                } else {
+                    FilledTonalButton(onClick = { vm.aplicarLimpieza(); limpieza = null }) { Text("Limpiar") }
+                }
+            },
+            dismissButton = {
+                if (!nada) TextButton(onClick = { limpieza = null }) { Text("Cancelar") }
+            }
+        )
     }
 
     propuesta?.let { p ->

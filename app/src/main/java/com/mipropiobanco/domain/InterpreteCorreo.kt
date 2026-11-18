@@ -105,9 +105,9 @@ object InterpreteCorreo {
         Regex("recibiste (?:un pago|un abono|dinero) de (.+?) por $DINERO", op).find(f)?.let {
             return crear(TipoMovimiento.INGRESO, it.groupValues[2], it.groupValues[1], "Pago de ${limpiar(it.groupValues[1])}")
         }
-        // Retiraste $X en ...
+        // Retiraste $X en ... (el efectivo se da por gastado al sacarlo)
         Regex("retiraste $DINERO (?:en )?(.+?)(?:,? el |$)", op).find(f)?.let {
-            return crear(TipoMovimiento.TRASLADO, it.groupValues[1], "Retiro", "Retiro en ${limpiar(it.groupValues[2]).take(40)}", retiro = true)
+            return crear(TipoMovimiento.GASTO, it.groupValues[1], "Retiro", "Retiro en ${limpiar(it.groupValues[2]).take(40)}", retiro = true)
         }
         // Compraste $X en COMERCIO con tu T.Deb *1234
         Regex("compraste $DINERO en (.+?) con tu (t\\.?\\s?deb|t\\.?\\s?cred|tarjeta (?:de )?(?:debito|d[eé]bito|credito|cr[eé]dito))", op).find(f)?.let {
@@ -135,18 +135,21 @@ object InterpreteCorreo {
     /** ¿Ya hay un movimiento igual (mismo monto, ±3 días)? Para no contar dos veces el mismo dinero. */
     fun buscarDuplicado(
         m: MovimientoCorreo,
-        movimientos: List<com.mipropiobanco.data.local.MovimientoEntity>
+        movimientos: List<com.mipropiobanco.data.local.MovimientoEntity>,
+        dias: Long = 3
     ): String? {
         fun cerca(fecha: Long, dias: Long) = kotlin.math.abs(
             java.time.temporal.ChronoUnit.DAYS.between(com.mipropiobanco.util.Formato.aLocalDate(fecha), m.fecha)
         ) <= dias
-        movimientos.firstOrNull { it.monto == m.monto && it.tipo == m.tipo.name && cerca(it.fecha, 3) }?.let {
+        // Un retiro pudo quedar guardado antes como traslado a efectivo.
+        val tipos = if (m.esRetiro) setOf(TipoMovimiento.GASTO.name, TipoMovimiento.TRASLADO.name) else setOf(m.tipo.name)
+        movimientos.firstOrNull { it.monto == m.monto && it.tipo in tipos && cerca(it.fecha, dias) }?.let {
             return "Ya registraste ${com.mipropiobanco.util.Formato.cop(it.monto)} el ${com.mipropiobanco.util.Formato.fecha(it.fecha)}" +
                 if (it.nota.isNotBlank()) " («${it.nota.take(30)}»)" else ""
         }
         if (m.esNomina) {
             // Desprendible ya cargado: devengos − deducciones de esos días = lo que llegó al banco.
-            val deNomina = movimientos.filter { it.nota.contains("nómina") && cerca(it.fecha, 6) }
+            val deNomina = movimientos.filter { it.nota.contains("nómina") && cerca(it.fecha, dias * 2) }
             val neto = deNomina.sumOf { if (it.tipo == TipoMovimiento.INGRESO.name) it.monto else -it.monto }
             if (deNomina.isNotEmpty() && kotlin.math.abs(neto - m.monto) <= 1_000L) {
                 return "Ya cargaste el desprendible de esta nómina (neto ${com.mipropiobanco.util.Formato.cop(neto)})"

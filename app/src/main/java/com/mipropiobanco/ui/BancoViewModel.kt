@@ -217,7 +217,22 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         }
         var tipo = m.tipo
         var categoria: Long? = null
-        var destino: Long? = if (m.esRetiro) medioCon("efectivo")?.id else null
+        var destino: Long? = null
+        if (m.esRetiro) {
+            // Retiro: el efectivo se da por gastado de una vez, sin preguntar.
+            val p = Propuesta(
+                tipo = TipoMovimiento.GASTO,
+                monto = m.monto,
+                categoriaId = finanzas.categoriaEfectivo(),
+                medioId = (medioTarjeta ?: medioBanco)?.id,
+                fecha = m.fecha,
+                nota = m.resumen.take(80),
+                textoOriginal = m.texto,
+                patronRegla = null,
+                idBandeja = m.id
+            )
+            return p to true
+        }
         if (regla != null) {
             tipo = TipoMovimiento.desde(regla.tipo)
             categoria = regla.categoriaId.takeIf { it > 0L }
@@ -255,18 +270,32 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     private val correosProcesados = mutableSetOf<String>()
 
     private fun registrarCorreosConocidos(correos: List<CorreoBandeja>) {
-        if (!preferencias.autoCorreos.value || correos.isEmpty()) return
+        if (correos.isEmpty()) return
         viewModelScope.launch {
           candadoCorreos.lock()
           try {
             var registrados = 0
+            var descartados = 0
             val existentes = finanzas.movimientos.first().toMutableList()
-            for (c in correos) {
+            val textosVistos = mutableSetOf<String>()
+            for (c in correos.sortedBy { it.fecha }) {
                 if (c.id in correosProcesados) continue
+                // El mismo correo repetido: se quita de la bandeja.
+                if (!textosVistos.add(c.texto.trim())) {
+                    correosProcesados.add(c.id)
+                    runCatching { nube.quitarDeBandeja(c.id) }.onSuccess { descartados++ }
+                    continue
+                }
                 val m = InterpreteCorreo.interpretar(
                     c.id, c.texto, Formato.aLocalDate(c.fecha.takeIf { it > 0L } ?: Formato.hoyMillis())
                 ) ?: continue
-                if (InterpreteCorreo.buscarDuplicado(m, existentes) != null) continue
+                // Ya registrado (mismo tipo y monto, mismo día o el siguiente): se descarta solo.
+                if (InterpreteCorreo.buscarDuplicado(m, existentes, dias = 1) != null) {
+                    correosProcesados.add(c.id)
+                    runCatching { nube.quitarDeBandeja(c.id) }.onSuccess { descartados++ }
+                    continue
+                }
+                if (!preferencias.autoCorreos.value) continue
                 val (p, conocido) = construirPropuesta(m)
                 val medio = p.medioId ?: continue
                 val listo = conocido && (p.tipo == TipoMovimiento.TRASLADO && p.medioDestinoId != null ||
@@ -279,18 +308,44 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                         Formato.aMillis(p.fecha), p.nota, null, null, null, p.medioDestinoId
                     )
                     nube.quitarDeBandeja(c.id)
+                    existentes.add(
+                        com.mipropiobanco.data.local.MovimientoEntity(
+                            tipo = p.tipo.name, monto = p.monto ?: 0L, categoriaId = p.categoriaId ?: 0L,
+                            medioId = medio, fecha = Formato.aMillis(p.fecha), nota = p.nota,
+                            medioDestinoId = p.medioDestinoId
+                        )
+                    )
                     registrados++
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
                 }
             }
-            if (registrados > 0) _mensajes.emit("📥 Se registraron solos $registrados movimientos de tus correos")
+            if (registrados > 0 || descartados > 0) {
+                _mensajes.emit(
+                    listOfNotNull(
+                        "📥 $registrados registrados solos".takeIf { registrados > 0 },
+                        "$descartados duplicados descartados".takeIf { descartados > 0 }
+                    ).joinToString(" · ")
+                )
+            }
           } finally {
             candadoCorreos.unlock()
           }
         }
     }
+
+    /** Cuenta qué limpiaría: movimientos repetidos y traslados a efectivo. */
+    fun revisarLimpieza(alListo: (com.mipropiobanco.data.repository.FinanzasRepository.Limpieza) -> Unit) {
+        viewModelScope.launch { alListo(finanzas.revisarLimpieza()) }
+    }
+
+    fun aplicarLimpieza() = ejecutar(
+        accion = { finanzas.aplicarLimpieza() },
+        mensaje = { (borrados, convertidos) ->
+            "🧹 $borrados duplicados borrados · $convertidos retiros pasados a gasto"
+        }
+    )
 
     /** Guarda el movimiento del correo, recuerda cómo se clasificó y lo saca de la bandeja. */
     fun guardarDesdeCorreo(
