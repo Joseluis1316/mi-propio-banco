@@ -72,6 +72,43 @@ class FinanzasRepository(private val db: BancoDatabase) {
         if (id == null) medioDao.insertar(conSaldo) else medioDao.actualizar(conSaldo)
     }
 
+    /**
+     * Pone cuánto hay hoy en cada cuenta/efectivo.
+     * comoMovimiento = true: la diferencia se registra hoy como gasto ("Otros gastos") si sobra plata
+     * registrada, o como ingreso ("Otros ingresos") si falta. false: se ajusta el punto de partida.
+     */
+    suspend fun ajustarSaldos(saldosHoy: Map<Long, Long>, comoMovimiento: Boolean) {
+        val medios = medioDao.obtenerTodos()
+        val movs = movimientoDao.obtenerTodos()
+        val actuales = com.mipropiobanco.domain.calcularSaldos(medios, movs)
+        val netos = com.mipropiobanco.domain.calcularSaldos(medios.map { it.copy(saldoInicial = 0L) }, movs)
+        val hoy = Formato.hoyMillis()
+        db.withTransaction {
+            saldosHoy.forEach { (id, real) ->
+                val medio = medios.firstOrNull { it.id == id } ?: return@forEach
+                val diferencia = (actuales[id] ?: 0L) - real
+                if (diferencia == 0L) return@forEach
+                if (comoMovimiento) {
+                    val gasto = diferencia > 0L
+                    val tipo = if (gasto) TipoMovimiento.GASTO else TipoMovimiento.INGRESO
+                    movimientoDao.insertar(
+                        MovimientoEntity(
+                            tipo = tipo.name,
+                            monto = kotlin.math.abs(diferencia),
+                            categoriaId = if (gasto) categoriaPorNombre("Otros gastos", tipo, "📦")
+                            else categoriaPorNombre("Otros ingresos", tipo, "➕"),
+                            medioId = id,
+                            fecha = hoy,
+                            nota = if (gasto) "Ajuste: gastos que no se registraron" else "Ajuste: dinero que no se registró"
+                        )
+                    )
+                } else {
+                    medioDao.actualizar(medio.copy(saldoInicial = real - (netos[id] ?: 0L)))
+                }
+            }
+        }
+    }
+
     // ---------------- Reglas aprendidas de los correos ----------------
 
     suspend fun buscarRegla(patron: String): com.mipropiobanco.data.local.ReglaCuentaEntity? =

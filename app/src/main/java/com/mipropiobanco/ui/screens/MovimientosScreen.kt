@@ -137,6 +137,15 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val mes = YearMonth.parse(mesTexto)
     var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
+    var ajustandoSaldos by rememberSaveable { mutableStateOf(false) }
+    if (ajustandoSaldos) {
+        DialogoSaldos(
+            medios = medios,
+            saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos),
+            alCerrar = { ajustandoSaldos = false },
+            alGuardar = { valores, comoMovimiento -> vm.ajustarSaldos(valores, comoMovimiento); ajustandoSaldos = false }
+        )
+    }
     var nuevoTipo by rememberSaveable { mutableStateOf(if (nuevoInicial == "GASTO" || nuevoInicial == "INGRESO") nuevoInicial else "") }
     var editando by remember { mutableStateOf<MovimientoEntity?>(null) }
     var registrando by remember { mutableStateOf<Ocurrencia?>(null) }
@@ -266,13 +275,21 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 item { TarjetaResumenMes(resumen, medMap) }
                 item {
                     val saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos)
-                    Card(onClick = alConfigurar, modifier = Modifier.fillMaxWidth()) {
+                    Card(onClick = { ajustandoSaldos = true }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("💰 Mis cuentas hoy", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "💰 Mis cuentas hoy",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { ajustandoSaldos = true }) { Text("✏️ Ajustar") }
+                            }
                             val conMovimiento = medios.filter { m -> (saldos[m.id] ?: 0L) != 0L || m.saldoInicial != 0L }
                             if (conMovimiento.isEmpty()) {
                                 Text(
-                                    "Pon el saldo actual de cada cuenta en ⚙️ › Medios de pago para ver cuánto tienes en cada una.",
+                                    "Toca ✏️ Ajustar y escribe cuánto tienes hoy en cada cuenta y en efectivo.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -961,4 +978,57 @@ private fun FilaNomina(item: com.mipropiobanco.domain.ItemNomina, incluido: Bool
             color = if (item.esDeduccion) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         )
     }
+}
+
+
+/** Escribe cuánto tienes hoy en cada cuenta y en efectivo; la app ajusta el punto de partida. */
+@Composable
+private fun DialogoSaldos(
+    medios: List<com.mipropiobanco.data.local.MedioPagoEntity>,
+    saldos: Map<Long, Long>,
+    alCerrar: () -> Unit,
+    alGuardar: (Map<Long, Long>, Boolean) -> Unit
+) {
+    var comoMovimiento by androidx.compose.runtime.remember { mutableStateOf(true) }
+    val valores = androidx.compose.runtime.remember(medios) {
+        androidx.compose.runtime.mutableStateMapOf<Long, String>().apply {
+            medios.forEach { m -> put(m.id, (saldos[m.id] ?: 0L).coerceAtLeast(0L).takeIf { it > 0L }?.toString() ?: "") }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("💰 ¿Cuánto tienes hoy?") },
+        text = {
+            Column(
+                Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "Escribe lo que hay hoy en cada cuenta y en efectivo. Deja vacío lo que no uses.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = comoMovimiento, onCheckedChange = { comoMovimiento = it })
+                    Text(
+                        if (comoMovimiento) "La diferencia se anota hoy como gasto (Otros gastos), o como ingreso si te falta registrar plata."
+                        else "Solo ajustar el punto de partida, sin anotar gasto ni ingreso.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                medios.forEach { m ->
+                    CampoMonto(
+                        valor = valores[m.id] ?: "",
+                        alCambiar = { valores[m.id] = it },
+                        etiqueta = "${m.icono} ${m.nombre}"
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = {
+                alGuardar(medios.associate { m -> m.id to ((valores[m.id] ?: "").toLongOrNull() ?: 0L) }, comoMovimiento)
+            }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
 }

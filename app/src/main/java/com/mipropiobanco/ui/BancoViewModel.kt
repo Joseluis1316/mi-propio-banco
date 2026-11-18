@@ -396,6 +396,11 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "Medio de pago guardado" }
     )
 
+    fun ajustarSaldos(saldosHoy: Map<Long, Long>, comoMovimiento: Boolean) = ejecutar(
+        accion = { finanzas.ajustarSaldos(saldosHoy, comoMovimiento) },
+        mensaje = { "💰 Saldos actualizados" }
+    )
+
     fun eliminarMedio(m: MedioPagoEntity) = ejecutar(
         accion = { finanzas.eliminarMedio(m) },
         mensaje = { "Medio de pago eliminado" }
