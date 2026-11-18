@@ -98,7 +98,7 @@ object InterpreteCorreo {
             return crear(TipoMovimiento.INGRESO, it.groupValues[2], it.groupValues[1], "Nómina de ${limpiar(it.groupValues[1])}", nomina = true)
         }
         // Recibiste una transferencia por $X de NOMBRE en tu cuenta...
-        Regex("recibiste una transferencia (?:por|de) $DINERO de (.+?)(?: en tu| a tu|,| el |$)", op).find(f)?.let {
+        Regex("recibiste (?:una transferencia|un pago|un abono|dinero) (?:por|de) $DINERO de (.+?)(?: en tu| a tu|,| el |$)", op).find(f)?.let {
             return crear(TipoMovimiento.INGRESO, it.groupValues[1], it.groupValues[2], "Transferencia de ${limpiar(it.groupValues[2])}")
         }
         // Recibiste un pago de NOMBRE por $X
