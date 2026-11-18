@@ -33,6 +33,7 @@ import androidx.navigation.navArgument
 import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.screens.AjustesScreen
 import com.mipropiobanco.ui.screens.BancoScreen
+import com.mipropiobanco.ui.screens.BandejaScreen
 import com.mipropiobanco.ui.screens.CalendarioScreen
 import com.mipropiobanco.ui.screens.ConfiguracionFinanzasScreen
 import com.mipropiobanco.ui.screens.DashboardScreen
@@ -51,6 +52,7 @@ private object Rutas {
     const val DEUDAS = "deudas"
     const val AJUSTES = "ajustes"
     const val CONFIG_FINANZAS = "config_finanzas"
+    const val BANDEJA = "bandeja"
     const val NUEVO_PRESTAMO = "nuevo_prestamo"
     const val DETALLE_PRESTAMO = "prestamo"
     const val DETALLE_DEUDA = "deuda"
@@ -135,7 +137,8 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
                     alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) },
                     alVerMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
-                    alAjustes = { nav.navigate(Rutas.AJUSTES) }
+                    alAjustes = { nav.navigate(Rutas.AJUSTES) },
+                    alBandeja = { nav.navigate(Rutas.BANDEJA) }
                 )
             }
             composable(
@@ -148,7 +151,8 @@ fun AppNavegacion(vm: BancoViewModel) {
                 MovimientosScreen(
                     vm = vm,
                     nuevoInicial = e.arguments?.getString("nuevo").orEmpty(),
-                    alConfigurar = { nav.navigate(Rutas.CONFIG_FINANZAS) }
+                    alConfigurar = { nav.navigate(Rutas.CONFIG_FINANZAS) },
+                    alBandeja = { nav.navigate(Rutas.BANDEJA) }
                 )
             }
             composable(Rutas.CALENDARIO) {
@@ -193,6 +197,13 @@ fun AppNavegacion(vm: BancoViewModel) {
                     vm = vm,
                     alVolver = { nav.popBackStack() },
                     alConfigFinanzas = { nav.navigate(Rutas.CONFIG_FINANZAS) }
+                )
+            }
+            composable(Rutas.BANDEJA) {
+                BandejaScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alComoConectar = { nav.navigate(Rutas.AJUSTES) }
                 )
             }
             composable(Rutas.CONFIG_FINANZAS) {

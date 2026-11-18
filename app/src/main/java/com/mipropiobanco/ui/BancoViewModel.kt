@@ -28,6 +28,9 @@ import kotlinx.coroutines.tasks.await
 import java.io.File
 import com.mipropiobanco.data.prefs.ModoTema
 import com.mipropiobanco.data.sync.EstadoNube
+import com.mipropiobanco.data.sync.CorreoBandeja
+import com.mipropiobanco.domain.InterpreteCorreo
+import com.mipropiobanco.domain.MovimientoCorreo
 import com.mipropiobanco.data.sync.SincronizacionNube
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +49,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,12 +84,16 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         nota: String,
         repetir: DatosRepeticion?,
         plantillaIdExistente: Long? = null,
-        foto: String? = null
+        foto: String? = null,
+        medioDestinoId: Long? = null
     ) = ejecutar(
-        accion = { finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto) },
+        accion = {
+            finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto, medioDestinoId)
+        },
         mensaje = {
             when {
                 id != null -> "Movimiento actualizado"
+                tipo == TipoMovimiento.TRASLADO -> "Traslado de ${Formato.cop(monto)} registrado"
                 repetir != null -> "${tipo.etiqueta} guardado y plantilla fija creada"
                 else -> "${tipo.etiqueta} de ${Formato.cop(monto)} guardado"
             }
@@ -178,6 +186,133 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     )
 
     /** Si el usuario cancela, se borra la foto que no se usó. */
+    // ---------- Correos del banco (bandeja) ----------
+
+    val uidNube: String? get() = nube.uid
+
+    val bandeja: StateFlow<List<CorreoBandeja>> =
+        nube.bandeja().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun descartarCorreo(id: String) = ejecutar(
+        accion = { nube.quitarDeBandeja(id) },
+        mensaje = { "Correo descartado" }
+    )
+
+    /** Arma el movimiento propuesto a partir del correo, usando lo aprendido de correos anteriores. */
+    fun prepararCorreo(m: MovimientoCorreo, alListo: (Propuesta) -> Unit) {
+        viewModelScope.launch { alListo(construirPropuesta(m).first) }
+    }
+
+    /** Devuelve la propuesta y si venía de una regla aprendida (para poder registrarla sola). */
+    private suspend fun construirPropuesta(m: MovimientoCorreo): Pair<Propuesta, Boolean> {
+        val regla = finanzas.buscarRegla(m.patron)
+        val cats = finanzas.categorias.first()
+        val meds = finanzas.medios.first()
+        fun medioCon(palabra: String) = meds.firstOrNull { Interprete.normalizar(it.nombre).contains(palabra) }
+        val medioBanco = medioCon("bancolombia") ?: medioCon("transferencia") ?: meds.firstOrNull()
+        val medioTarjeta = when (m.tarjeta) {
+            "credito" -> medioCon("credito")
+            "debito" -> medioCon("debito")
+            else -> null
+        }
+        var tipo = m.tipo
+        var categoria: Long? = null
+        var destino: Long? = if (m.esRetiro) medioCon("efectivo")?.id else null
+        if (regla != null) {
+            tipo = TipoMovimiento.desde(regla.tipo)
+            categoria = regla.categoriaId.takeIf { it > 0L }
+            destino = regla.medioDestinoId ?: destino
+        } else if (tipo != TipoMovimiento.TRASLADO) {
+            categoria = if (m.esNomina) {
+                cats.firstOrNull { it.tipo == TipoMovimiento.INGRESO.name && Interprete.normalizar(it.nombre) == "salario" }?.id
+            } else {
+                Interprete.detectarCategoria(Interprete.normalizar(m.contraparte + " " + m.texto), tipo, cats)?.id
+            }
+        }
+        val propuesta = Propuesta(
+            tipo = tipo,
+            monto = m.monto,
+            categoriaId = categoria,
+            medioId = (medioTarjeta ?: medioBanco)?.id,
+            fecha = m.fecha,
+            nota = m.resumen.take(80),
+            textoOriginal = m.texto,
+            medioDestinoId = destino,
+            patronRegla = m.patron,
+            idBandeja = m.id
+        )
+        return propuesta to (regla != null)
+    }
+
+    val autoCorreos: StateFlow<Boolean> = preferencias.autoCorreos
+    fun cambiarAutoCorreos(valor: Boolean) = preferencias.cambiarAutoCorreos(valor)
+
+    /**
+     * Registra solos los correos que ya sabe clasificar (regla aprendida) y que no parecen duplicados.
+     * Los demás quedan en la bandeja para que los revises.
+     */
+    private val candadoCorreos = kotlinx.coroutines.sync.Mutex()
+    private val correosProcesados = mutableSetOf<String>()
+
+    private fun registrarCorreosConocidos(correos: List<CorreoBandeja>) {
+        if (!preferencias.autoCorreos.value || correos.isEmpty()) return
+        viewModelScope.launch {
+          candadoCorreos.lock()
+          try {
+            var registrados = 0
+            val existentes = finanzas.movimientos.first().toMutableList()
+            for (c in correos) {
+                if (c.id in correosProcesados) continue
+                val m = InterpreteCorreo.interpretar(
+                    c.id, c.texto, Formato.aLocalDate(c.fecha.takeIf { it > 0L } ?: Formato.hoyMillis())
+                ) ?: continue
+                if (InterpreteCorreo.buscarDuplicado(m, existentes) != null) continue
+                val (p, conocido) = construirPropuesta(m)
+                val medio = p.medioId ?: continue
+                val listo = conocido && (p.tipo == TipoMovimiento.TRASLADO && p.medioDestinoId != null ||
+                    p.tipo != TipoMovimiento.TRASLADO && p.categoriaId != null)
+                if (!listo) continue
+                correosProcesados.add(c.id)
+                try {
+                    finanzas.guardarMovimiento(
+                        null, p.tipo, p.monto ?: continue, p.categoriaId ?: 0L, medio,
+                        Formato.aMillis(p.fecha), p.nota, null, null, null, p.medioDestinoId
+                    )
+                    nube.quitarDeBandeja(c.id)
+                    registrados++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+            if (registrados > 0) _mensajes.emit("📥 Se registraron solos $registrados movimientos de tus correos")
+          } finally {
+            candadoCorreos.unlock()
+          }
+        }
+    }
+
+    /** Guarda el movimiento del correo, recuerda cómo se clasificó y lo saca de la bandeja. */
+    fun guardarDesdeCorreo(
+        propuesta: Propuesta,
+        tipo: TipoMovimiento,
+        monto: Long,
+        categoriaId: Long,
+        medioId: Long,
+        fecha: Long,
+        nota: String,
+        deudaId: Long?,
+        medioDestinoId: Long?
+    ) = ejecutar(
+        accion = {
+            finanzas.guardarMovimiento(null, tipo, monto, categoriaId, medioId, fecha, nota, null, null, null, medioDestinoId)
+            propuesta.patronRegla?.let { finanzas.recordarRegla(it, tipo, categoriaId, medioDestinoId) }
+            propuesta.idBandeja?.let { nube.quitarDeBandeja(it) }
+            if (deudaId != null) repo.abonarDeuda(deudaId, monto, fecha)
+        },
+        mensaje = { "${tipo.etiqueta} de ${Formato.cop(monto)} registrado desde tu correo" }
+    )
+
     fun descartarFoto(ruta: String?) {
         ruta ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -201,8 +336,8 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "Categoría eliminada" }
     )
 
-    fun guardarMedio(id: Long?, nombre: String, icono: String) = ejecutar(
-        accion = { finanzas.guardarMedio(id, nombre, icono) },
+    fun guardarMedio(id: Long?, nombre: String, icono: String, saldoActual: Long? = null) = ejecutar(
+        accion = { finanzas.guardarMedio(id, nombre, icono, saldoActual) },
         mensaje = { "Medio de pago guardado" }
     )
 
@@ -475,6 +610,8 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     )
 
     init {
+        // Correos del banco ya conocidos: se registran solos en cuanto llegan.
+        viewModelScope.launch { bandeja.collect { registrarCorreosConocidos(it) } }
         // Al abrir la app se registran solas las plantillas automáticas que ya vencieron.
         viewModelScope.launch {
             try {

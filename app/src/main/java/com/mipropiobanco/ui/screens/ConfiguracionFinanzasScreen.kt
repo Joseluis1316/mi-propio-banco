@@ -216,7 +216,7 @@ private fun DialogoPlantilla(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TipoMovimiento.entries.forEach { t ->
+                    TipoMovimiento.BASICOS.forEach { t ->
                         FilterChip(selected = tipo == t, onClick = { tipo = t }, label = { Text(t.etiqueta) })
                     }
                 }
@@ -300,7 +300,7 @@ private fun PestanaCategorias(vm: BancoViewModel) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            TipoMovimiento.entries.forEach { tipo ->
+            TipoMovimiento.BASICOS.forEach { tipo ->
                 item(key = "t-${tipo.name}") {
                     Text(
                         if (tipo == TipoMovimiento.GASTO) "Gastos" else "Ingresos",
@@ -349,7 +349,7 @@ private fun PestanaCategorias(vm: BancoViewModel) {
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TipoMovimiento.entries.forEach { t ->
+                        TipoMovimiento.BASICOS.forEach { t ->
                             FilterChip(selected = tipo == t, onClick = { tipo = t }, label = { Text(t.etiqueta) })
                         }
                     }
@@ -404,6 +404,8 @@ private fun PestanaCategorias(vm: BancoViewModel) {
 @Composable
 private fun PestanaMedios(vm: BancoViewModel) {
     val medios by vm.medios.collectAsStateWithLifecycle()
+    val movimientos by vm.movimientos.collectAsStateWithLifecycle()
+    val saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos)
     var editando by remember { mutableStateOf<MedioPagoEntity?>(null) }
     var nuevo by remember { mutableStateOf(false) }
 
@@ -423,6 +425,7 @@ private fun PestanaMedios(vm: BancoViewModel) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(m.icono, style = MaterialTheme.typography.titleLarge)
                         Text(m.nombre, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                        Text(Formato.cop(saldos[m.id] ?: 0L), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -441,6 +444,7 @@ private fun PestanaMedios(vm: BancoViewModel) {
         val m = editando
         var nombre by rememberSaveable { mutableStateOf(m?.nombre.orEmpty()) }
         var icono by rememberSaveable { mutableStateOf(m?.icono ?: "💵") }
+        var saldo by rememberSaveable { mutableStateOf(m?.let { (saldos[it.id] ?: 0L).takeIf { v -> v > 0L }?.toString() }.orEmpty()) }
         var confirmarBorrar by remember { mutableStateOf(false) }
         val cerrar = {
             nuevo = false
@@ -458,6 +462,12 @@ private fun PestanaMedios(vm: BancoViewModel) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    CampoMonto(
+                        valor = saldo,
+                        alCambiar = { saldo = it },
+                        etiqueta = "Saldo actual (opcional)",
+                        apoyo = "Lo que tienes hoy ahí. Desde este valor se suman y restan tus movimientos."
+                    )
                     SelectorEmoji(icono) { icono = it }
                     if (m != null) {
                         TextButton(onClick = { confirmarBorrar = true }) {
@@ -468,7 +478,7 @@ private fun PestanaMedios(vm: BancoViewModel) {
             },
             confirmButton = {
                 TextButton(enabled = nombre.isNotBlank(), onClick = {
-                    vm.guardarMedio(m?.id, nombre, icono)
+                    vm.guardarMedio(m?.id, nombre, icono, saldo.toLongOrNull())
                     cerrar()
                 }) { Text("Guardar") }
             },

@@ -75,6 +75,8 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
     val estadoNube by vm.estadoNube.collectAsStateWithLifecycle()
     val procesando by vm.procesandoCuenta.collectAsStateWithLifecycle()
     var confirmarSalir by remember { mutableStateOf(false) }
+    val autoCorreos by vm.autoCorreos.collectAsStateWithLifecycle()
+    val portapapeles = androidx.compose.ui.platform.LocalClipboardManager.current
     var tipoEditando by remember { mutableStateOf<TipoPrestamoEntity?>(null) }
     var tipoNuevo by remember { mutableStateOf(false) }
 
@@ -132,6 +134,23 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                             Icon(Icons.Filled.CloudSync, contentDescription = null)
                             Text("  Iniciar sesión o crear cuenta")
                         }
+                    }
+                }
+            }
+            item {
+                Seccion("📥 Correos de Bancolombia") {
+                    InstruccionesGmail(vm.uidNube) {
+                        vm.uidNube?.let { portapapeles.setText(androidx.compose.ui.text.AnnotatedString(it)) }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Registrar solos los conocidos")
+                            Text(
+                                "Cuentas y comercios que ya clasificaste una vez se anotan sin preguntar.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = autoCorreos, onCheckedChange = { vm.cambiarAutoCorreos(it) })
                     }
                 }
             }

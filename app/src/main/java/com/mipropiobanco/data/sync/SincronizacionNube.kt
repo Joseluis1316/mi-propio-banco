@@ -13,6 +13,9 @@ import com.mipropiobanco.data.prefs.AjustesPreferencias
 import com.mipropiobanco.data.repository.BancoRepository
 import com.mipropiobanco.data.repository.FinanzasRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -30,6 +33,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+
+/** Correo del banco que el script de Gmail dejó en la nube, pendiente de revisar. */
+data class CorreoBandeja(val id: String, val texto: String, val fecha: Long)
 
 sealed interface EstadoNube {
     data object SinCuenta : EstadoNube
@@ -76,6 +82,43 @@ class SincronizacionNube(
     }
 
     private fun documento(uid: String) = firestore.collection("usuarios").document(uid)
+
+    /** Código del usuario en la nube (lo necesita el script de Gmail). */
+    val uid: String? get() = auth.currentUser?.uid
+
+    /** Correos pendientes que dejó el script de Gmail en usuarios/{uid}/bandeja. */
+    fun bandeja(): Flow<List<CorreoBandeja>> = callbackFlow {
+        var registro: ListenerRegistration? = null
+        val oyente = FirebaseAuth.AuthStateListener { a ->
+            registro?.remove()
+            registro = null
+            val usuario = a.currentUser
+            if (usuario == null) {
+                trySend(emptyList())
+            } else {
+                registro = documento(usuario.uid).collection("bandeja").addSnapshotListener { snap, _ ->
+                    if (snap != null) {
+                        trySend(
+                            snap.documents.map {
+                                CorreoBandeja(it.id, it.getString("texto").orEmpty(), it.getLong("fecha") ?: 0L)
+                            }.sortedByDescending { it.fecha }
+                        )
+                    }
+                }
+            }
+        }
+        auth.addAuthStateListener(oyente)
+        awaitClose {
+            auth.removeAuthStateListener(oyente)
+            registro?.remove()
+        }
+    }
+
+    suspend fun quitarDeBandeja(id: String) {
+        val usuario = auth.currentUser ?: return
+        // Sin internet, Firestore guarda el borrado y lo envía después.
+        withTimeoutOrNull(10_000L) { documento(usuario.uid).collection("bandeja").document(id).delete().await() }
+    }
 
     /** Observa la base de datos y sube los cambios 2 segundos después del último. */
     @OptIn(FlowPreview::class)

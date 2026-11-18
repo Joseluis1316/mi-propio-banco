@@ -55,6 +55,7 @@ private fun colorEvento(tipo: TipoEvento): Color = when (tipo) {
     TipoEvento.PROGRAMADO -> MaterialTheme.colorScheme.tertiary
     TipoEvento.CUOTA_PRESTAMO -> MaterialTheme.colorScheme.secondary
     TipoEvento.PAGO_DEUDA -> Color(0xFFE67E22)
+    TipoEvento.TRASLADO -> MaterialTheme.colorScheme.outline
 }
 
 @Composable
@@ -267,7 +268,7 @@ private fun FilaEvento(e: EventoCalendario) {
     val signo = when (e.tipo) {
         TipoEvento.INGRESO -> "+"
         TipoEvento.GASTO, TipoEvento.CUOTA_PRESTAMO, TipoEvento.PAGO_DEUDA -> "−"
-        TipoEvento.PROGRAMADO -> ""
+        TipoEvento.PROGRAMADO, TipoEvento.TRASLADO -> ""
     }
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {

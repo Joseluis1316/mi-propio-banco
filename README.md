@@ -12,6 +12,8 @@ App para administrar tu fondo de autofinanciamiento y salir de deudas. Funciona 
 - **Plantillas fijas:** ingresos o gastos que se repiten cada día, semana, quincena, mes o año; se registran solos o quedan "por registrar" para confirmar el monto.
 - **Calendario:** ingresos, gastos, fijos programados, cuotas de autopréstamos y pagos de deudas en una vista mensual.
 - **Asistente con IA (gratis y sin internet):** foto del recibo (lee total, fecha y comercio con ML Kit en el celular), dictado por voz o texto libre ("gasté 45 mil en mercado con Nequi"); la app propone el movimiento y tú lo confirmas. Las fotos se guardan solo en el celular.
+- **Correos de Bancolombia:** un script gratuito de Google (`scripts/LectorCorreosBancolombia.gs`) lee cada 15 minutos los correos con la etiqueta `MiBanco` y los deja en la bandeja de la app; los ya conocidos se registran solos y los posibles duplicados se marcan.
+- **Traslados y saldos:** retiros y pasos entre tus cuentas no cuentan como gasto; cada medio de pago muestra su saldo actual.
 - **Respaldo:** exportar/importar JSON y exportar CSV.
 
 ## Cuenta y nube (Firebase)

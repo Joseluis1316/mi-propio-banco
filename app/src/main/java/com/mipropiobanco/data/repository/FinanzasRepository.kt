@@ -54,10 +54,37 @@ class FinanzasRepository(private val db: BancoDatabase) {
 
     // ---------------- Medios de pago ----------------
 
-    suspend fun guardarMedio(id: Long?, nombre: String, icono: String) {
+    /** [saldoActual]: lo que hay hoy en esa cuenta; se calcula el saldo inicial que lo produce. */
+    suspend fun guardarMedio(id: Long?, nombre: String, icono: String, saldoActual: Long? = null) {
         require(nombre.isNotBlank()) { "Escribe el nombre del medio de pago" }
-        val m = MedioPagoEntity(id = id ?: 0L, nombre = nombre.trim(), icono = icono.trim().ifEmpty { "💵" })
-        if (id == null) medioDao.insertar(m) else medioDao.actualizar(m)
+        val actual = id?.let { mid -> medioDao.obtenerTodos().firstOrNull { it.id == mid } }
+        val base = MedioPagoEntity(
+            id = id ?: 0L, nombre = nombre.trim(), icono = icono.trim().ifEmpty { "💵" },
+            saldoInicial = actual?.saldoInicial ?: 0L
+        )
+        val conSaldo = if (saldoActual != null) {
+            val neto = if (id == null) 0L else {
+                val todos = movimientoDao.obtenerTodos()
+                com.mipropiobanco.domain.calcularSaldos(listOf(base.copy(saldoInicial = 0L)), todos)[id] ?: 0L
+            }
+            base.copy(saldoInicial = saldoActual - neto)
+        } else base
+        if (id == null) medioDao.insertar(conSaldo) else medioDao.actualizar(conSaldo)
+    }
+
+    // ---------------- Reglas aprendidas de los correos ----------------
+
+    suspend fun buscarRegla(patron: String): com.mipropiobanco.data.local.ReglaCuentaEntity? =
+        db.reglaCuentaDao().buscar(patron)
+
+    suspend fun recordarRegla(patron: String, tipo: TipoMovimiento, categoriaId: Long, medioDestinoId: Long?) {
+        val dao = db.reglaCuentaDao()
+        val existente = dao.buscar(patron)
+        val regla = com.mipropiobanco.data.local.ReglaCuentaEntity(
+            id = existente?.id ?: 0L, patron = patron, tipo = tipo.name,
+            categoriaId = categoriaId, medioDestinoId = medioDestinoId
+        )
+        if (existente == null) dao.insertar(regla) else dao.actualizar(regla)
     }
 
     suspend fun eliminarMedio(m: MedioPagoEntity) = db.withTransaction {
@@ -80,11 +107,16 @@ class FinanzasRepository(private val db: BancoDatabase) {
         nota: String,
         repetir: DatosRepeticion?,
         plantillaIdExistente: Long? = null,
-        foto: String? = null
+        foto: String? = null,
+        medioDestinoId: Long? = null
     ) = db.withTransaction {
         require(monto > 0L) { "El monto debe ser mayor que cero" }
-        require(categoriaId > 0L) { "Elige una categoría" }
         require(medioId > 0L) { "Elige el medio de pago" }
+        if (tipo == TipoMovimiento.TRASLADO) {
+            require(medioDestinoId != null && medioDestinoId != medioId) { "Elige a qué cuenta llega el dinero" }
+        } else {
+            require(categoriaId > 0L) { "Elige una categoría" }
+        }
         var plantillaId: Long? = plantillaIdExistente
         if (id == null && repetir != null) {
             val nombre = nota.trim().ifEmpty {
@@ -113,7 +145,8 @@ class FinanzasRepository(private val db: BancoDatabase) {
             fecha = fecha,
             nota = nota.trim(),
             plantillaId = plantillaId,
-            foto = foto
+            foto = foto,
+            medioDestinoId = if (tipo == TipoMovimiento.TRASLADO) medioDestinoId else null
         )
         if (id == null) movimientoDao.insertar(m) else movimientoDao.actualizar(m)
     }

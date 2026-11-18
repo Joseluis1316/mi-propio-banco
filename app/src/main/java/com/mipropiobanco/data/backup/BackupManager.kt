@@ -121,7 +121,7 @@ class BackupManager(
         })
         raiz.put("mediosPago", JSONArray().apply {
             db.medioPagoDao().obtenerTodos().forEach { m ->
-                put(JSONObject().put("id", m.id).put("nombre", m.nombre).put("icono", m.icono))
+                put(JSONObject().put("id", m.id).put("nombre", m.nombre).put("icono", m.icono).put("saldoInicial", m.saldoInicial))
             }
         })
         raiz.put("movimientos", JSONArray().apply {
@@ -131,6 +131,7 @@ class BackupManager(
                         .put("categoriaId", m.categoriaId).put("medioId", m.medioId).put("fecha", m.fecha)
                         .put("nota", m.nota).put("plantillaId", m.plantillaId ?: JSONObject.NULL)
                         .put("foto", m.foto ?: JSONObject.NULL)
+                        .put("medioDestinoId", m.medioDestinoId ?: JSONObject.NULL)
                 )
             }
         })
@@ -141,6 +142,14 @@ class BackupManager(
                         .put("categoriaId", p.categoriaId).put("medioId", p.medioId).put("periodicidad", p.periodicidad)
                         .put("fechaInicio", p.fechaInicio).put("automatica", p.automatica).put("activa", p.activa)
                         .put("ultimaOcurrencia", p.ultimaOcurrencia)
+                )
+            }
+        })
+        raiz.put("reglasCuenta", JSONArray().apply {
+            db.reglaCuentaDao().obtenerTodas().forEach { r ->
+                put(
+                    JSONObject().put("id", r.id).put("patron", r.patron).put("tipo", r.tipo)
+                        .put("categoriaId", r.categoriaId).put("medioDestinoId", r.medioDestinoId ?: JSONObject.NULL)
                 )
             }
         })
@@ -192,6 +201,16 @@ class BackupManager(
                 db.medioPagoDao().insertarTodos(datos.medios)
             }
             db.movimientoDao().insertarTodos(datos.movimientos)
+            raiz.optJSONArray("reglasCuenta")?.let { arreglo ->
+                db.reglaCuentaDao().borrarTodo()
+                db.reglaCuentaDao().insertarTodas(arreglo.objetos().map {
+                    com.mipropiobanco.data.local.ReglaCuentaEntity(
+                        id = it.getLong("id"), patron = it.getString("patron"), tipo = it.getString("tipo"),
+                        categoriaId = it.getLong("categoriaId"),
+                        medioDestinoId = if (it.isNull("medioDestinoId")) null else it.getLong("medioDestinoId")
+                    )
+                })
+            }
             db.plantillaDao().insertarTodas(datos.plantillas)
             if (datos.tipos != null && datos.tipos.isNotEmpty()) {
                 db.tipoPrestamoDao().borrarTodo()
@@ -280,7 +299,10 @@ class BackupManager(
             )
         }
         val medios = raiz.optJSONArray("mediosPago")?.objetos()?.map {
-            MedioPagoEntity(id = it.getLong("id"), nombre = it.getString("nombre"), icono = it.getString("icono"))
+            MedioPagoEntity(
+                id = it.getLong("id"), nombre = it.getString("nombre"), icono = it.getString("icono"),
+                saldoInicial = it.optLong("saldoInicial", 0L)
+            )
         }
         val movimientos = raiz.optJSONArray("movimientos")?.objetos()?.map {
             MovimientoEntity(
@@ -288,7 +310,8 @@ class BackupManager(
                 categoriaId = it.getLong("categoriaId"), medioId = it.getLong("medioId"), fecha = it.getLong("fecha"),
                 nota = it.optString("nota", ""),
                 plantillaId = if (it.isNull("plantillaId")) null else it.getLong("plantillaId"),
-                foto = if (it.isNull("foto")) null else it.optString("foto").ifEmpty { null }
+                foto = if (it.isNull("foto")) null else it.optString("foto").ifEmpty { null },
+                medioDestinoId = if (!it.has("medioDestinoId") || it.isNull("medioDestinoId")) null else it.getLong("medioDestinoId")
             )
         }.orEmpty()
         val plantillas = raiz.optJSONArray("plantillas")?.objetos()?.map {
@@ -328,6 +351,7 @@ class BackupManager(
             db.categoriaDao().insertarTodas(BancoDatabase.CATEGORIAS_INICIALES)
             db.medioPagoDao().borrarTodo()
             db.medioPagoDao().insertarTodos(BancoDatabase.MEDIOS_INICIALES)
+            db.reglaCuentaDao().borrarTodo()
         }
         preferencias.cambiarPresupuestoDeudas(0L)
     }

@@ -279,3 +279,24 @@ interface PlantillaDao {
     @Query("DELETE FROM plantillas")
     suspend fun borrarTodo()
 }
+
+@Dao
+interface ReglaCuentaDao {
+    @Query("SELECT * FROM reglas_cuenta ORDER BY id ASC")
+    suspend fun obtenerTodas(): List<ReglaCuentaEntity>
+
+    @Query("SELECT * FROM reglas_cuenta WHERE patron = :patron LIMIT 1")
+    suspend fun buscar(patron: String): ReglaCuentaEntity?
+
+    @Insert
+    suspend fun insertar(regla: ReglaCuentaEntity): Long
+
+    @Insert
+    suspend fun insertarTodas(reglas: List<ReglaCuentaEntity>)
+
+    @Update
+    suspend fun actualizar(regla: ReglaCuentaEntity)
+
+    @Query("DELETE FROM reglas_cuenta")
+    suspend fun borrarTodo()
+}

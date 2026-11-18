@@ -120,7 +120,9 @@ data class CategoriaEntity(
 data class MedioPagoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nombre: String,
-    val icono: String
+    val icono: String,
+    /** Saldo de partida: saldo actual = saldoInicial + entradas − salidas. */
+    val saldoInicial: Long = 0L
 )
 
 /** Ingreso o gasto registrado. plantillaId indica si vino de una plantilla fija. */
@@ -135,7 +137,22 @@ data class MovimientoEntity(
     val nota: String = "",
     val plantillaId: Long? = null,
     /** Ruta local de la foto del recibo (se guarda solo en este celular). */
-    val foto: String? = null
+    val foto: String? = null,
+    /** Solo en traslados: a qué cuenta/medio llegó el dinero (medioId es de dónde salió). */
+    val medioDestinoId: Long? = null
+)
+
+/**
+ * Regla aprendida de los correos: cuando aparece esta cuenta o contraparte,
+ * se clasifica igual que la última vez (ej. *3012316181 = traslado a mi Nequi).
+ */
+@Entity(tableName = "reglas_cuenta")
+data class ReglaCuentaEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val patron: String,
+    val tipo: String,
+    val categoriaId: Long,
+    val medioDestinoId: Long?
 )
 
 /**

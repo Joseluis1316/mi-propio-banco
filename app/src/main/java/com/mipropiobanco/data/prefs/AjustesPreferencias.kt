@@ -25,6 +25,15 @@ class AjustesPreferencias(context: Context) {
     private val _modoLocal = MutableStateFlow(prefs.getBoolean(CLAVE_MODO_LOCAL, false))
     val modoLocal: StateFlow<Boolean> = _modoLocal.asStateFlow()
 
+    /** Registrar solos los correos del banco que ya sabe clasificar. */
+    private val _autoCorreos = MutableStateFlow(prefs.getBoolean(CLAVE_AUTO_CORREOS, true))
+    val autoCorreos: StateFlow<Boolean> = _autoCorreos.asStateFlow()
+
+    fun cambiarAutoCorreos(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
+        _autoCorreos.value = valor
+    }
+
     private fun leerModo(): ModoTema =
         runCatching { ModoTema.valueOf(prefs.getString(CLAVE_TEMA, null) ?: ModoTema.SISTEMA.name) }
             .getOrDefault(ModoTema.SISTEMA)
@@ -69,5 +78,6 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"
         const val CLAVE_SINCRONIZADO = "ultima_sincronizacion"
+        const val CLAVE_AUTO_CORREOS = "auto_correos"
     }
 }

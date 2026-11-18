@@ -9,11 +9,34 @@ import java.time.YearMonth
 
 enum class TipoMovimiento(val etiqueta: String) {
     GASTO("Gasto"),
-    INGRESO("Ingreso");
+    INGRESO("Ingreso"),
+    /** Dinero que pasa de una cuenta tuya a otra (retiro, recarga a tu Nequi). No es gasto ni ingreso. */
+    TRASLADO("Traslado");
 
     companion object {
+        /** Tipos que tienen categorías y plantillas. */
+        val BASICOS = listOf(GASTO, INGRESO)
         fun desde(nombre: String?): TipoMovimiento = entries.firstOrNull { it.name == nombre } ?: GASTO
     }
+}
+
+/** Saldo actual de cada medio: saldo inicial + entradas − salidas (incluye traslados). */
+fun calcularSaldos(
+    medios: List<com.mipropiobanco.data.local.MedioPagoEntity>,
+    movimientos: List<MovimientoEntity>
+): Map<Long, Long> {
+    val saldos = medios.associate { it.id to it.saldoInicial }.toMutableMap()
+    movimientos.forEach { m ->
+        when (m.tipo) {
+            TipoMovimiento.INGRESO.name -> saldos[m.medioId] = (saldos[m.medioId] ?: 0L) + m.monto
+            TipoMovimiento.GASTO.name -> saldos[m.medioId] = (saldos[m.medioId] ?: 0L) - m.monto
+            TipoMovimiento.TRASLADO.name -> {
+                saldos[m.medioId] = (saldos[m.medioId] ?: 0L) - m.monto
+                m.medioDestinoId?.let { d -> saldos[d] = (saldos[d] ?: 0L) + m.monto }
+            }
+        }
+    }
+    return saldos
 }
 
 /** Una repetición concreta de una plantilla fija. */
@@ -93,7 +116,7 @@ data class AvancePresupuesto(val categoria: CategoriaEntity, val gastado: Long) 
 
 // ---------------- Calendario ----------------
 
-enum class TipoEvento { INGRESO, GASTO, PROGRAMADO, CUOTA_PRESTAMO, PAGO_DEUDA }
+enum class TipoEvento { INGRESO, GASTO, TRASLADO, PROGRAMADO, CUOTA_PRESTAMO, PAGO_DEUDA }
 
 data class EventoCalendario(
     val fecha: LocalDate,
@@ -120,12 +143,17 @@ object Calendario {
             val f = Formato.aLocalDate(m.fecha)
             if (!f.isBefore(desde) && !f.isAfter(hasta)) {
                 val c = categorias[m.categoriaId]
-                val esIngreso = m.tipo == TipoMovimiento.INGRESO.name
+                val tipoEvento = when (m.tipo) {
+                    TipoMovimiento.INGRESO.name -> TipoEvento.INGRESO
+                    TipoMovimiento.TRASLADO.name -> TipoEvento.TRASLADO
+                    else -> TipoEvento.GASTO
+                }
                 lista.add(
                     EventoCalendario(
                         fecha = f,
-                        tipo = if (esIngreso) TipoEvento.INGRESO else TipoEvento.GASTO,
-                        titulo = "${c?.icono.orEmpty()} ${c?.nombre ?: "Sin categoría"}".trim(),
+                        tipo = tipoEvento,
+                        titulo = if (tipoEvento == TipoEvento.TRASLADO) "🔄 Traslado entre cuentas"
+                        else "${c?.icono.orEmpty()} ${c?.nombre ?: "Sin categoría"}".trim(),
                         monto = m.monto,
                         detalle = m.nota
                     )

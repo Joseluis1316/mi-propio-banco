@@ -15,7 +15,13 @@ data class Propuesta(
     val fecha: LocalDate,
     val nota: String,
     val foto: String? = null,
-    val textoOriginal: String = ""
+    val textoOriginal: String = "",
+    /** Traslados: a qué medio llega el dinero. */
+    val medioDestinoId: Long? = null,
+    /** Correos: cuenta o contraparte para recordar cómo se clasificó. */
+    val patronRegla: String? = null,
+    /** Correos: id del mensaje en la bandeja de la nube. */
+    val idBandeja: String? = null
 )
 
 /**

@@ -62,7 +62,8 @@ fun DashboardScreen(
     alAbrirPrestamo: (Long) -> Unit,
     alVerDeudas: () -> Unit,
     alVerMovimientos: () -> Unit,
-    alAjustes: () -> Unit
+    alAjustes: () -> Unit,
+    alBandeja: () -> Unit = {}
 ) {
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
@@ -71,6 +72,7 @@ fun DashboardScreen(
     val ahora = rememberAhora()
     val movimientos by vm.movimientos.collectAsStateWithLifecycle()
     val plantillas by vm.plantillas.collectAsStateWithLifecycle()
+    val bandeja by vm.bandeja.collectAsStateWithLifecycle()
     val resumenMes = com.mipropiobanco.domain.ResumenMes.de(movimientos, java.time.YearMonth.now())
     val porRegistrar = plantillas.sumOf { com.mipropiobanco.domain.Recurrencia.pendientes(it, java.time.LocalDate.now()).size }
 
@@ -95,6 +97,21 @@ fun DashboardScreen(
                 }
                 IconButton(onClick = alAjustes) {
                     Icon(Icons.Filled.Settings, contentDescription = "Ajustes")
+                }
+            }
+        }
+        if (bandeja.isNotEmpty()) {
+            item {
+                Card(
+                    onClick = alBandeja,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                ) {
+                    Text(
+                        "📥 ${bandeja.size} movimientos de tus correos por revisar",
+                        modifier = Modifier.padding(14.dp),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

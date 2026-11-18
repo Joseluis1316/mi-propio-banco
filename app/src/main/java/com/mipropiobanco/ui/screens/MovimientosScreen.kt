@@ -125,13 +125,14 @@ fun SelectorMes(mes: YearMonth, alCambiar: (YearMonth) -> Unit) {
 private enum class FiltroMov(val etiqueta: String) { TODOS("Todos"), GASTOS("Gastos"), INGRESOS("Ingresos") }
 
 @Composable
-fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: () -> Unit) {
+fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: () -> Unit, alBandeja: () -> Unit = {}) {
     val movimientos by vm.movimientos.collectAsStateWithLifecycle()
     val categorias by vm.categorias.collectAsStateWithLifecycle()
     val medios by vm.medios.collectAsStateWithLifecycle()
     val plantillas by vm.plantillas.collectAsStateWithLifecycle()
     val deudas by vm.deudas.collectAsStateWithLifecycle()
     val deudasActivas = deudas.filter { !it.pagada }
+    val bandeja by vm.bandeja.collectAsStateWithLifecycle()
 
     var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val mes = YearMonth.parse(mesTexto)
@@ -225,6 +226,21 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item { SelectorMes(mes) { mesTexto = it.toString() } }
+                if (bandeja.isNotEmpty()) {
+                    item {
+                        Card(
+                            onClick = alBandeja,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                        ) {
+                            Text(
+                                "📥 Tienes ${bandeja.size} movimientos de tus correos por revisar",
+                                modifier = Modifier.padding(14.dp),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -248,6 +264,25 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                     }
                 }
                 item { TarjetaResumenMes(resumen, medMap) }
+                item {
+                    val saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos)
+                    Card(onClick = alConfigurar, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("💰 Mis cuentas hoy", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            val conMovimiento = medios.filter { m -> (saldos[m.id] ?: 0L) != 0L || m.saldoInicial != 0L }
+                            if (conMovimiento.isEmpty()) {
+                                Text(
+                                    "Pon el saldo actual de cada cuenta en ⚙️ › Medios de pago para ver cuánto tienes en cada una.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            conMovimiento.forEach { m -> FilaResumen("${m.icono} ${m.nombre}", Formato.cop(saldos[m.id] ?: 0L)) }
+                            if (conMovimiento.size > 1) {
+                                FilaResumen("Total", Formato.cop(conMovimiento.sumOf { saldos[it.id] ?: 0L }), destacado = true)
+                            }
+                        }
+                    }
+                }
 
                 if (pendientes.isNotEmpty()) {
                     item {
@@ -288,7 +323,13 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 }
                 porDia.forEach { (dia, lista) ->
                     item(key = "d-$dia") {
-                        val neto = lista.sumOf { if (it.tipo == TipoMovimiento.INGRESO.name) it.monto else -it.monto }
+                        val neto = lista.sumOf {
+                            when (it.tipo) {
+                                TipoMovimiento.INGRESO.name -> it.monto
+                                TipoMovimiento.GASTO.name -> -it.monto
+                                else -> 0L
+                            }
+                        }
                         Row(Modifier.padding(top = 6.dp)) {
                             Text(
                                 dia.format(formatoDia).replaceFirstChar { it.uppercase() },
@@ -299,7 +340,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                         }
                     }
                     items(lista, key = { "m-${it.id}" }) { m ->
-                        FilaMovimiento(m, catMap[m.categoriaId], medMap[m.medioId]) { editando = m }
+                        FilaMovimiento(m, catMap[m.categoriaId], medMap[m.medioId], m.medioDestinoId?.let { medMap[it] }) { editando = m }
                     }
                 }
             }
@@ -332,8 +373,8 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
             tipoInicial = TipoMovimiento.desde(editando?.tipo ?: p?.tipo?.name ?: nuevoTipo),
             categorias = categorias,
             medios = medios,
-            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto, deudaId ->
-                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto)
+            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto, deudaId, destino ->
+                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto, destino)
                 // Además baja el saldo de la deuda elegida (sin volver a anotar el gasto).
                 if (deudaId != null && editando == null) vm.abonarDeuda(deudaId, monto, fecha, comoGasto = false)
             },
@@ -485,7 +526,31 @@ private fun FilaPresupuesto(a: AvancePresupuesto) {
 }
 
 @Composable
-private fun FilaMovimiento(m: MovimientoEntity, c: CategoriaEntity?, medio: MedioPagoEntity?, alTocar: () -> Unit) {
+private fun FilaMovimiento(
+    m: MovimientoEntity,
+    c: CategoriaEntity?,
+    medio: MedioPagoEntity?,
+    destino: MedioPagoEntity? = null,
+    alTocar: () -> Unit
+) {
+    if (m.tipo == TipoMovimiento.TRASLADO.name) {
+        Card(onClick = alTocar, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("🔄", style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text("Traslado", fontWeight = FontWeight.Medium)
+                    Text(
+                        "${medio?.nombre ?: "?"} → ${destino?.nombre ?: "?"}" + if (m.nota.isNotBlank()) " · ${m.nota}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(Formato.cop(m.monto), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        return
+    }
     val esIngreso = m.tipo == TipoMovimiento.INGRESO.name
     Card(onClick = alTocar, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -537,7 +602,7 @@ fun SelectorPeriodicidad(seleccion: Periodicidad, alElegir: (Periodicidad) -> Un
 }
 
 @Composable
-private fun DialogoMovimiento(
+internal fun DialogoMovimiento(
     existente: MovimientoEntity?,
     propuesta: Propuesta?,
     deudas: List<com.mipropiobanco.domain.DeudaConAbonos>,
@@ -545,7 +610,7 @@ private fun DialogoMovimiento(
     tipoInicial: TipoMovimiento,
     categorias: List<CategoriaEntity>,
     medios: List<MedioPagoEntity>,
-    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?, Long?) -> Unit,
+    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?, Long?, Long?) -> Unit,
     alEliminar: (() -> Unit)?,
     alCancelar: () -> Unit,
     alCerrar: () -> Unit
@@ -560,6 +625,12 @@ private fun DialogoMovimiento(
         mutableStateOf(existente?.fecha ?: propuesta?.fecha?.let { Formato.aMillis(it) } ?: Formato.hoyMillis())
     }
     var nota by rememberSaveable { mutableStateOf(existente?.nota ?: propuesta?.nota.orEmpty()) }
+    var medioDestinoId by rememberSaveable {
+        mutableStateOf(
+            existente?.medioDestinoId ?: propuesta?.medioDestinoId
+                ?: medios.firstOrNull { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("efectivo") }?.id ?: 0L
+        )
+    }
     val foto = existente?.foto ?: propuesta?.foto
     var verFoto by remember { mutableStateOf(false) }
     var deudaId by rememberSaveable { mutableStateOf(deudaSugerida) }
@@ -577,8 +648,10 @@ private fun DialogoMovimiento(
     var confirmarBorrar by remember { mutableStateOf(false) }
 
     val montoV = monto.toLongOrNull() ?: 0L
-    val categoriaValida = categorias.any { it.id == categoriaId && it.tipo == tipo.name }
-    val valido = montoV > 0L && categoriaValida && medioId > 0L
+    val esTraslado = tipo == TipoMovimiento.TRASLADO
+    val categoriaValida = esTraslado || categorias.any { it.id == categoriaId && it.tipo == tipo.name }
+    val valido = montoV > 0L && categoriaValida && medioId > 0L &&
+        (!esTraslado || (medioDestinoId > 0L && medioDestinoId != medioId))
 
     val cancelar: () -> Unit = {
         alCancelar()
@@ -615,18 +688,37 @@ private fun DialogoMovimiento(
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     TipoMovimiento.entries.forEach { t ->
                         FilterChip(
                             selected = tipo == t,
                             onClick = { tipo = t },
-                            label = { Text(if (t == TipoMovimiento.GASTO) "− Gasto" else "+ Ingreso") }
+                            label = {
+                                Text(
+                                    when (t) {
+                                        TipoMovimiento.GASTO -> "− Gasto"
+                                        TipoMovimiento.INGRESO -> "+ Ingreso"
+                                        TipoMovimiento.TRASLADO -> "🔄 Traslado"
+                                    }
+                                )
+                            }
                         )
                     }
                 }
                 CampoMonto(valor = monto, alCambiar = { monto = it }, etiqueta = "Monto")
-                Text("Categoría", style = MaterialTheme.typography.labelLarge)
-                SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                if (esTraslado) {
+                    Text(
+                        "Dinero que pasa entre tus cuentas (retiro en cajero, recarga a tu Nequi…). No cuenta como gasto ni ingreso.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text("Sale de", style = MaterialTheme.typography.labelLarge)
+                    SelectorMedio(medios, medioId) { medioId = it }
+                    Text("Llega a", style = MaterialTheme.typography.labelLarge)
+                    SelectorMedio(medios, medioDestinoId) { medioDestinoId = it }
+                } else {
+                    Text("Categoría", style = MaterialTheme.typography.labelLarge)
+                    SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                }
                 if (esPagoDeDeuda) {
                     Text("¿A cuál deuda le abonas? (baja su saldo)", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -640,8 +732,10 @@ private fun DialogoMovimiento(
                         }
                     }
                 }
-                Text(if (tipo == TipoMovimiento.GASTO) "¿Cómo pagaste?" else "¿Cómo lo recibiste?", style = MaterialTheme.typography.labelLarge)
-                SelectorMedio(medios, medioId) { medioId = it }
+                if (!esTraslado) {
+                    Text(if (tipo == TipoMovimiento.GASTO) "¿Cómo pagaste?" else "¿Cómo lo recibiste?", style = MaterialTheme.typography.labelLarge)
+                    SelectorMedio(medios, medioId) { medioId = it }
+                }
                 SelectorFecha("Fecha", fecha, { fecha = it })
                 OutlinedTextField(
                     value = nota,
@@ -650,7 +744,7 @@ private fun DialogoMovimiento(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (existente == null) {
+                if (existente == null && !esTraslado) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = repetir, onCheckedChange = { repetir = it })
                         Text("Repetir: crear plantilla fija")
@@ -679,9 +773,10 @@ private fun DialogoMovimiento(
         confirmButton = {
             TextButton(enabled = valido, onClick = {
                 alGuardar(
-                    tipo, montoV, categoriaId, medioId, fecha, nota,
-                    if (repetir) DatosRepeticion(periodicidad, automatica) else null, foto,
-                    if (esPagoDeDeuda) deudaId else null
+                    tipo, montoV, if (esTraslado) 0L else categoriaId, medioId, fecha, nota,
+                    if (repetir && !esTraslado) DatosRepeticion(periodicidad, automatica) else null, foto,
+                    if (esPagoDeDeuda) deudaId else null,
+                    if (esTraslado) medioDestinoId else null
                 )
                 alCerrar()
             }) { Text("Guardar") }

@@ -19,9 +19,10 @@ import kotlin.math.pow
         CategoriaEntity::class,
         MedioPagoEntity::class,
         MovimientoEntity::class,
-        PlantillaEntity::class
+        PlantillaEntity::class,
+        ReglaCuentaEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class BancoDatabase : RoomDatabase() {
@@ -35,15 +36,16 @@ abstract class BancoDatabase : RoomDatabase() {
     abstract fun medioPagoDao(): MedioPagoDao
     abstract fun movimientoDao(): MovimientoDao
     abstract fun plantillaDao(): PlantillaDao
+    abstract fun reglaCuentaDao(): ReglaCuentaDao
 
     companion object {
         fun crear(context: Context): BancoDatabase =
             Room.databaseBuilder(context, BancoDatabase::class.java, "mi_propio_banco.db")
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         sembrarTipos(db)
-                        sembrarFinanzas(db)
+                        sembrarFinanzas(db, conSaldo = true)
                     }
                 })
                 .build()
@@ -102,7 +104,8 @@ abstract class BancoDatabase : RoomDatabase() {
             MedioPagoEntity(nombre = "Tarjeta crédito", icono = "💳")
         )
 
-        private fun sembrarFinanzas(db: SupportSQLiteDatabase) {
+        /** [conSaldo] = la tabla medios_pago ya tiene la columna saldoInicial (instalación nueva). */
+        private fun sembrarFinanzas(db: SupportSQLiteDatabase, conSaldo: Boolean = false) {
             CATEGORIAS_INICIALES.forEach { c ->
                 db.execSQL(
                     "INSERT INTO categorias (nombre, tipo, icono, presupuestoMensual) VALUES (?, ?, ?, 0)",
@@ -110,7 +113,23 @@ abstract class BancoDatabase : RoomDatabase() {
                 )
             }
             MEDIOS_INICIALES.forEach { m ->
-                db.execSQL("INSERT INTO medios_pago (nombre, icono) VALUES (?, ?)", arrayOf<Any>(m.nombre, m.icono))
+                if (conSaldo) {
+                    db.execSQL("INSERT INTO medios_pago (nombre, icono, saldoInicial) VALUES (?, ?, 0)", arrayOf<Any>(m.nombre, m.icono))
+                } else {
+                    db.execSQL("INSERT INTO medios_pago (nombre, icono) VALUES (?, ?)", arrayOf<Any>(m.nombre, m.icono))
+                }
+            }
+        }
+
+        /** Versión 4 → 5: traslados entre cuentas, saldo por medio y reglas aprendidas de los correos. */
+        val MIGRACION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE movimientos ADD COLUMN medioDestinoId INTEGER")
+                db.execSQL("ALTER TABLE medios_pago ADD COLUMN saldoInicial INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS reglas_cuenta (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "patron TEXT NOT NULL, tipo TEXT NOT NULL, categoriaId INTEGER NOT NULL, medioDestinoId INTEGER)"
+                )
             }
         }
 
