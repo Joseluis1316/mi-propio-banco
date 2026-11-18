@@ -11,6 +11,7 @@ App para administrar tu fondo de autofinanciamiento y salir de deudas. Funciona 
 - **Ingresos y gastos:** sin límites ni formas fijas; categorías editables con presupuesto mensual, medios de pago (efectivo, transferencia, Nequi, Daviplata, tarjetas…) y resumen por mes.
 - **Plantillas fijas:** ingresos o gastos que se repiten cada día, semana, quincena, mes o año; se registran solos o quedan "por registrar" para confirmar el monto.
 - **Calendario:** ingresos, gastos, fijos programados, cuotas de autopréstamos y pagos de deudas en una vista mensual.
+- **Asistente con IA (gratis y sin internet):** foto del recibo (lee total, fecha y comercio con ML Kit en el celular), dictado por voz o texto libre ("gasté 45 mil en mercado con Nequi"); la app propone el movimiento y tú lo confirmas. Las fotos se guardan solo en el celular.
 - **Respaldo:** exportar/importar JSON y exportar CSV.
 
 ## Cuenta y nube (Firebase)

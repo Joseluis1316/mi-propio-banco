@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RemoveCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.IconButton
@@ -153,8 +155,8 @@ fun DashboardScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AccionRapida("Gasto", Icons.Filled.RemoveCircle, { alNuevoMovimiento("GASTO") }, Modifier.weight(1f))
                 AccionRapida("Ingreso", Icons.Filled.AddCircle, { alNuevoMovimiento("INGRESO") }, Modifier.weight(1f))
-                AccionRapida("Aporte", Icons.Filled.Savings, alNuevoAporte, Modifier.weight(1f))
-                AccionRapida("Préstamo", Icons.Filled.RequestQuote, alNuevoPrestamo, Modifier.weight(1f))
+                AccionRapida("Hablar", Icons.Filled.Mic, { alNuevoMovimiento("VOZ") }, Modifier.weight(1f))
+                AccionRapida("Recibo", Icons.Filled.CameraAlt, { alNuevoMovimiento("FOTO") }, Modifier.weight(1f))
             }
         }
         item {

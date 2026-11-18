@@ -15,6 +15,14 @@ import com.mipropiobanco.data.local.PlantillaEntity
 import com.mipropiobanco.data.repository.DatosRepeticion
 import com.mipropiobanco.domain.Ocurrencia
 import com.mipropiobanco.domain.TipoMovimiento
+import com.mipropiobanco.domain.Interprete
+import com.mipropiobanco.domain.Propuesta
+import com.mipropiobanco.util.Fotos
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.tasks.await
+import java.io.File
 import com.mipropiobanco.data.prefs.ModoTema
 import com.mipropiobanco.data.sync.EstadoNube
 import com.mipropiobanco.data.sync.SincronizacionNube
@@ -68,9 +76,10 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         fecha: Long,
         nota: String,
         repetir: DatosRepeticion?,
-        plantillaIdExistente: Long? = null
+        plantillaIdExistente: Long? = null,
+        foto: String? = null
     ) = ejecutar(
-        accion = { finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente) },
+        accion = { finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto) },
         mensaje = {
             when {
                 id != null -> "Movimiento actualizado"
@@ -79,6 +88,59 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             }
         }
     )
+
+    // ---------- Asistente: recibos, voz y texto ----------
+
+    private val _leyendoRecibo = MutableStateFlow(false)
+    val leyendoRecibo: StateFlow<Boolean> = _leyendoRecibo.asStateFlow()
+
+    /** Entiende una frase dicha o escrita y propone el movimiento. */
+    fun interpretarFrase(frase: String): Propuesta =
+        Interprete.interpretarFrase(frase, categorias.value, medios.value)
+
+    /**
+     * Guarda la foto reducida, lee el texto del recibo con IA en el celular (ML Kit)
+     * y propone el gasto. [temporal] es el archivo de la cámara, que se borra al terminar.
+     */
+    fun leerRecibo(origen: Uri, temporal: File?, alListo: (Propuesta) -> Unit) {
+        if (_leyendoRecibo.value) return
+        viewModelScope.launch {
+            _leyendoRecibo.value = true
+            try {
+                val ruta = withContext(Dispatchers.IO) { Fotos.guardarReducida(app, origen) }
+                val texto = leerTexto(ruta)
+                val propuesta = Interprete.interpretarRecibo(texto, ruta, categorias.value, medios.value)
+                if (propuesta.monto == null) _mensajes.emit("No encontré el total del recibo: escríbelo tú")
+                alListo(propuesta)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _mensajes.emit("No se pudo leer el recibo: ${e.message ?: "error desconocido"}")
+            } finally {
+                temporal?.let { runCatching { it.delete() } }
+                _leyendoRecibo.value = false
+            }
+        }
+    }
+
+    private suspend fun leerTexto(ruta: String): String {
+        val reconocedor = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        try {
+            val imagen = InputImage.fromFilePath(app, Uri.fromFile(File(ruta)))
+            return reconocedor.process(imagen).await().text
+        } finally {
+            reconocedor.close()
+        }
+    }
+
+    /** Si el usuario cancela, se borra la foto que no se usó. */
+    fun descartarFoto(ruta: String?) {
+        ruta ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val enUso = finanzas.fotoEnUso(ruta)
+            if (!enUso) runCatching { File(ruta).delete() }
+        }
+    }
 
     fun eliminarMovimiento(m: MovimientoEntity) = ejecutar(
         accion = { finanzas.eliminarMovimiento(m) },

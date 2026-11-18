@@ -133,7 +133,9 @@ data class MovimientoEntity(
     val medioId: Long,
     val fecha: Long,
     val nota: String = "",
-    val plantillaId: Long? = null
+    val plantillaId: Long? = null,
+    /** Ruta local de la foto del recibo (se guarda solo en este celular). */
+    val foto: String? = null
 )
 
 /**

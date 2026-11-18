@@ -21,7 +21,7 @@ import kotlin.math.pow
         MovimientoEntity::class,
         PlantillaEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class BancoDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ abstract class BancoDatabase : RoomDatabase() {
     companion object {
         fun crear(context: Context): BancoDatabase =
             Room.databaseBuilder(context, BancoDatabase::class.java, "mi_propio_banco.db")
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         sembrarTipos(db)
@@ -111,6 +111,13 @@ abstract class BancoDatabase : RoomDatabase() {
             }
             MEDIOS_INICIALES.forEach { m ->
                 db.execSQL("INSERT INTO medios_pago (nombre, icono) VALUES (?, ?)", arrayOf<Any>(m.nombre, m.icono))
+            }
+        }
+
+        /** Versión 3 → 4: foto del recibo en cada movimiento. */
+        val MIGRACION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE movimientos ADD COLUMN foto TEXT")
             }
         }
 

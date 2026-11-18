@@ -79,7 +79,8 @@ class FinanzasRepository(private val db: BancoDatabase) {
         fecha: Long,
         nota: String,
         repetir: DatosRepeticion?,
-        plantillaIdExistente: Long? = null
+        plantillaIdExistente: Long? = null,
+        foto: String? = null
     ) = db.withTransaction {
         require(monto > 0L) { "El monto debe ser mayor que cero" }
         require(categoriaId > 0L) { "Elige una categoría" }
@@ -111,12 +112,18 @@ class FinanzasRepository(private val db: BancoDatabase) {
             medioId = medioId,
             fecha = fecha,
             nota = nota.trim(),
-            plantillaId = plantillaId
+            plantillaId = plantillaId,
+            foto = foto
         )
         if (id == null) movimientoDao.insertar(m) else movimientoDao.actualizar(m)
     }
 
-    suspend fun eliminarMovimiento(m: MovimientoEntity) = movimientoDao.eliminar(m)
+    suspend fun fotoEnUso(ruta: String): Boolean = movimientoDao.obtenerTodos().any { it.foto == ruta }
+
+    suspend fun eliminarMovimiento(m: MovimientoEntity) {
+        movimientoDao.eliminar(m)
+        m.foto?.let { runCatching { java.io.File(it).delete() } }
+    }
 
     // ---------------- Plantillas fijas ----------------
 

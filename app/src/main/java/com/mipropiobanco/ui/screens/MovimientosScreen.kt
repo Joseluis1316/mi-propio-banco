@@ -2,7 +2,26 @@
 
 package com.mipropiobanco.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import com.mipropiobanco.domain.Propuesta
+import com.mipropiobanco.util.Fotos
+import java.io.File
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,9 +134,60 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val mes = YearMonth.parse(mesTexto)
     var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
-    var nuevoTipo by rememberSaveable { mutableStateOf(nuevoInicial) }
+    var nuevoTipo by rememberSaveable { mutableStateOf(if (nuevoInicial == "GASTO" || nuevoInicial == "INGRESO") nuevoInicial else "") }
     var editando by remember { mutableStateOf<MovimientoEntity?>(null) }
     var registrando by remember { mutableStateOf<Ocurrencia?>(null) }
+    var propuesta by remember { mutableStateOf<Propuesta?>(null) }
+    var escribir by remember { mutableStateOf(false) }
+    var elegirFoto by remember { mutableStateOf(false) }
+    val leyendo by vm.leyendoRecibo.collectAsStateWithLifecycle()
+    val contexto = LocalContext.current
+    var archivoCamara by remember { mutableStateOf<File?>(null) }
+
+    val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val archivo = archivoCamara
+        if (ok && archivo != null) {
+            vm.leerRecibo(android.net.Uri.fromFile(archivo), archivo) { propuesta = it }
+        } else {
+            archivo?.delete()
+        }
+    }
+    val galeria = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.leerRecibo(uri, null) { propuesta = it }
+    }
+    val voz = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val texto = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!texto.isNullOrBlank()) propuesta = vm.interpretarFrase(texto)
+    }
+    val abrirCamara: () -> Unit = {
+        val archivo = Fotos.archivoTemporal(contexto)
+        archivoCamara = archivo
+        camara.launch(Fotos.uriCompartible(contexto, archivo))
+    }
+    val abrirVoz: () -> Unit = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-CO")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Ej.: gasté 45 mil en mercado con Nequi")
+        }
+        try {
+            voz.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            escribir = true
+        }
+    }
+
+    // Accesos directos desde Inicio.
+    var atajoUsado by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (atajoUsado) return@LaunchedEffect
+        atajoUsado = true
+        when (nuevoInicial) {
+            "VOZ" -> { nuevoTipo = ""; abrirVoz() }
+            "FOTO" -> { nuevoTipo = ""; elegirFoto = true }
+            "TEXTO" -> { nuevoTipo = ""; escribir = true }
+        }
+    }
 
     val catMap = categorias.associateBy { it.id }
     val medMap = medios.associateBy { it.id }
@@ -152,6 +222,28 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item { SelectorMes(mes) { mesTexto = it.toString() } }
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("✨ Registrar con IA", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (leyendo) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
+                                    Text("  Leyendo el recibo…")
+                                }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    BotonAsistente("Recibo", Icons.Filled.CameraAlt, Modifier.weight(1f)) { elegirFoto = true }
+                                    BotonAsistente("Hablar", Icons.Filled.Mic, Modifier.weight(1f)) { abrirVoz() }
+                                    BotonAsistente("Escribir", Icons.Filled.Keyboard, Modifier.weight(1f)) { escribir = true }
+                                }
+                            }
+                        }
+                    }
+                }
                 item { TarjetaResumenMes(resumen, medMap) }
 
                 if (pendientes.isNotEmpty()) {
@@ -219,19 +311,54 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
         )
     }
 
-    if (nuevoTipo.isNotEmpty() || editando != null) {
+    if (nuevoTipo.isNotEmpty() || editando != null || propuesta != null) {
+        val p = propuesta
         DialogoMovimiento(
             existente = editando,
-            tipoInicial = TipoMovimiento.desde(editando?.tipo ?: nuevoTipo),
+            propuesta = p,
+            tipoInicial = TipoMovimiento.desde(editando?.tipo ?: p?.tipo?.name ?: nuevoTipo),
             categorias = categorias,
             medios = medios,
-            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir ->
-                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId)
+            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto ->
+                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto)
             },
             alEliminar = editando?.let { m -> { vm.eliminarMovimiento(m) } },
+            alCancelar = { if (editando == null) vm.descartarFoto(p?.foto) },
             alCerrar = {
                 nuevoTipo = ""
                 editando = null
+                propuesta = null
+            }
+        )
+    }
+    if (escribir) {
+        DialogoEscribir(
+            alListo = { texto -> propuesta = vm.interpretarFrase(texto) },
+            alCerrar = { escribir = false }
+        )
+    }
+    if (elegirFoto) {
+        AlertDialog(
+            onDismissRequest = { elegirFoto = false },
+            title = { Text("Foto del recibo") },
+            text = { Text("La IA lee el total, la fecha y el comercio. Todo pasa en tu celular, sin internet.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    elegirFoto = false
+                    abrirCamara()
+                }) {
+                    Icon(Icons.Filled.CameraAlt, contentDescription = null)
+                    Text(" Tomar foto")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    elegirFoto = false
+                    galeria.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
+                    Text(" Galería")
+                }
             }
         )
     }
@@ -342,7 +469,7 @@ private fun FilaMovimiento(m: MovimientoEntity, c: CategoriaEntity?, medio: Medi
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(c?.nombre ?: "Sin categoría", fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOfNotNull(medio?.let { "${it.icono} ${it.nombre}" }, m.nota.ifBlank { null }, if (m.plantillaId != null) "🔁 fijo" else null)
+                    listOfNotNull(medio?.let { "${it.icono} ${it.nombre}" }, m.nota.ifBlank { null }, if (m.plantillaId != null) "🔁 fijo" else null, if (m.foto != null) "📎 recibo" else null)
                         .joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -388,19 +515,27 @@ fun SelectorPeriodicidad(seleccion: Periodicidad, alElegir: (Periodicidad) -> Un
 @Composable
 private fun DialogoMovimiento(
     existente: MovimientoEntity?,
+    propuesta: Propuesta?,
     tipoInicial: TipoMovimiento,
     categorias: List<CategoriaEntity>,
     medios: List<MedioPagoEntity>,
-    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?) -> Unit,
+    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?) -> Unit,
     alEliminar: (() -> Unit)?,
+    alCancelar: () -> Unit,
     alCerrar: () -> Unit
 ) {
     var tipo by rememberSaveable { mutableStateOf(tipoInicial) }
-    var monto by rememberSaveable { mutableStateOf(existente?.monto?.toString().orEmpty()) }
-    var categoriaId by rememberSaveable { mutableStateOf(existente?.categoriaId ?: 0L) }
-    var medioId by rememberSaveable { mutableStateOf(existente?.medioId ?: (medios.firstOrNull()?.id ?: 0L)) }
-    var fecha by rememberSaveable { mutableStateOf(existente?.fecha ?: Formato.hoyMillis()) }
-    var nota by rememberSaveable { mutableStateOf(existente?.nota.orEmpty()) }
+    var monto by rememberSaveable { mutableStateOf(existente?.monto?.toString() ?: propuesta?.monto?.toString().orEmpty()) }
+    var categoriaId by rememberSaveable { mutableStateOf(existente?.categoriaId ?: propuesta?.categoriaId ?: 0L) }
+    var medioId by rememberSaveable {
+        mutableStateOf(existente?.medioId ?: propuesta?.medioId ?: (medios.firstOrNull()?.id ?: 0L))
+    }
+    var fecha by rememberSaveable {
+        mutableStateOf(existente?.fecha ?: propuesta?.fecha?.let { Formato.aMillis(it) } ?: Formato.hoyMillis())
+    }
+    var nota by rememberSaveable { mutableStateOf(existente?.nota ?: propuesta?.nota.orEmpty()) }
+    val foto = existente?.foto ?: propuesta?.foto
+    var verFoto by remember { mutableStateOf(false) }
     var repetir by rememberSaveable { mutableStateOf(false) }
     var periodicidad by rememberSaveable { mutableStateOf(Periodicidad.MENSUAL) }
     var automatica by rememberSaveable { mutableStateOf(true) }
@@ -410,11 +545,41 @@ private fun DialogoMovimiento(
     val categoriaValida = categorias.any { it.id == categoriaId && it.tipo == tipo.name }
     val valido = montoV > 0L && categoriaValida && medioId > 0L
 
+    val cancelar: () -> Unit = {
+        alCancelar()
+        alCerrar()
+    }
     AlertDialog(
-        onDismissRequest = alCerrar,
-        title = { Text(if (existente == null) "Nuevo movimiento" else "Editar movimiento") },
+        onDismissRequest = cancelar,
+        title = {
+            Text(
+                when {
+                    existente != null -> "Editar movimiento"
+                    propuesta != null -> "✨ Revisa y confirma"
+                    else -> "Nuevo movimiento"
+                }
+            )
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (propuesta != null && existente == null && propuesta.foto == null) {
+                    Text("Entendí: «${propuesta.textoOriginal}»", style = MaterialTheme.typography.bodySmall)
+                }
+                if (foto != null) {
+                    val miniatura = remember(foto) { Fotos.miniatura(foto, 600) }
+                    if (miniatura != null) {
+                        Image(
+                            bitmap = miniatura.asImageBitmap(),
+                            contentDescription = "Foto del recibo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { verFoto = true }
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TipoMovimiento.entries.forEach { t ->
                         FilterChip(
@@ -465,12 +630,32 @@ private fun DialogoMovimiento(
         },
         confirmButton = {
             TextButton(enabled = valido, onClick = {
-                alGuardar(tipo, montoV, categoriaId, medioId, fecha, nota, if (repetir) DatosRepeticion(periodicidad, automatica) else null)
+                alGuardar(tipo, montoV, categoriaId, medioId, fecha, nota, if (repetir) DatosRepeticion(periodicidad, automatica) else null, foto)
                 alCerrar()
             }) { Text("Guardar") }
         },
-        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+        dismissButton = { TextButton(onClick = cancelar) { Text("Cancelar") } }
     )
+
+    if (verFoto && foto != null) {
+        val grande = remember(foto) { Fotos.miniatura(foto, 1600) }
+        AlertDialog(
+            onDismissRequest = { verFoto = false },
+            confirmButton = { TextButton(onClick = { verFoto = false }) { Text("Cerrar") } },
+            text = {
+                if (grande != null) {
+                    Image(
+                        bitmap = grande.asImageBitmap(),
+                        contentDescription = "Recibo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text("La foto ya no está en este celular.")
+                }
+            }
+        )
+    }
 
     if (confirmarBorrar && alEliminar != null) {
         DialogoConfirmar(
@@ -504,6 +689,46 @@ private fun DialogoRegistrarFijo(o: Ocurrencia, alConfirmar: (Long) -> Unit, alC
                 alConfirmar(montoV)
                 alCerrar()
             }) { Text("Registrar") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun BotonAsistente(texto: String, icono: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, alPulsar: () -> Unit) {
+    FilledTonalButton(onClick = alPulsar, modifier = modifier, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)) {
+        Icon(icono, contentDescription = null)
+        Text(" $texto", maxLines = 1)
+    }
+}
+
+@Composable
+private fun DialogoEscribir(alListo: (String) -> Unit, alCerrar: () -> Unit) {
+    var texto by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("Escríbelo como se lo dirías a alguien") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = texto,
+                    onValueChange = { texto = it.take(200) },
+                    placeholder = { Text("gasté 45 mil en mercado con Nequi") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                Text(
+                    "Ejemplos:\n• me pagaron 2 millones de salario\n• ayer tanqueé 80 mil en efectivo\n" +
+                        "• pagué la luz 135.400 por transferencia\n• almuerzo 18 mil el 15",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = texto.isNotBlank(), onClick = {
+                alListo(texto)
+                alCerrar()
+            }) { Text("Interpretar") }
         },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
     )
