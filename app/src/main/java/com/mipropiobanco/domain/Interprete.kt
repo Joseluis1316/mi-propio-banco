@@ -43,7 +43,7 @@ object Interprete {
         "Educación" to listOf("universidad", "semestre", "matricula", "curso", "libro", "colegio", "clase", "diplomado", "iu digital", "platzi", "udemy"),
         "Ropa" to listOf("ropa", "zapatos", "camisa", "pantalon", "tenis", "chaqueta", "jean", "medias", "falabella", "zara", "koaj", "arturo calle"),
         "Ocio" to listOf("cine", "fiesta", "cerveza", "trago", "rumba", "netflix", "spotify", "disney", "concierto", "paseo", "juego", "bar", "discoteca", "youtube premium", "hbo", "prime video"),
-        "Pago de deudas" to listOf("cuota", "deuda", "abono", "prestamo", "credito", "tarjeta de credito"),
+        "Pago de deudas" to listOf("cuota", "deuda", "abono", "prestamo", "credito", "tarjeta de credito", "sistecredito", "addi", "meddipay", "credifamilia", "pago de tarjeta", "obligacion"),
         "Viajes de trabajo" to listOf("hotel", "viaje", "vuelo", "avion", "hospedaje", "peaje", "airbnb", "terminal", "avianca", "latam", "wingo"),
         "Mascotas" to listOf("perro", "gato", "veterinario", "veterinaria", "concentrado", "mascota", "purina"),
         "Regalos" to listOf("regalo", "cumpleanos", "detalle", "obsequio"),
@@ -186,6 +186,11 @@ object Interprete {
             val a = m.groupValues[3].takeIf { it.isNotEmpty() }?.toInt()?.let { if (it < 100) 2000 + it else it } ?: hoy.year
             runCatching { return LocalDate.of(a, mes, d) }
         }
+        Regex("\\b(\\d{1,2})\\s+(?:de\\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z.]*\\s+(?:de\\s+|del\\s+)?(\\d{4})").find(t)?.let { m ->
+            val mes = listOf("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+                .indexOf(m.groupValues[2]) + 1
+            runCatching { return LocalDate.of(m.groupValues[3].toInt(), mes, m.groupValues[1].toInt()) }
+        }
         Regex("\\bel\\s+(\\d{1,2})(?:\\s+de\\s+([a-z]+))?").find(t)?.let { m ->
             val d = m.groupValues[1].toInt()
             val mesNombre = m.groupValues[2]
@@ -232,26 +237,40 @@ object Interprete {
 
     // ---------------- Recibos (texto leído con OCR) ----------------
 
-    private val REGEX_DINERO = Regex("\\$?\\s?(\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{2})?|\\d{4,9})(?!\\d)")
-    private val PALABRAS_TOTAL = listOf("total a pagar", "valor total", "total pagado", "vr total", "vlr total", "neto a pagar", "total")
+    private val REGEX_DINERO = Regex("(\\$)?\\s?(?<![\\d*])(\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{2})?|\\d{4,9})(?![\\d-])")
+    private val PALABRAS_TOTAL = listOf(
+        "total a pagar", "valor total", "total pagado", "vr total", "vlr total", "neto a pagar",
+        "valor de la transferencia", "valor transferido", "valor enviado", "valor pagado", "valor del pago",
+        "monto", "enviaste", "pagaste", "transferiste", "total", "valor"
+    )
+    /** Líneas que suelen tener números que no son el valor pagado. */
+    private val LINEAS_NO_MONTO = listOf(
+        "nit", "tel", "cel", "comprobante", "cuenta", "producto", "referencia", "ref", "aprobacion",
+        "autorizacion", "documento", "cedula", "c.c", "factura no", "no.", "nro", "numero", "codigo", "llave"
+    )
 
-    private fun montosEn(linea: String): List<Long> =
-        REGEX_DINERO.findAll(linea).mapNotNull { numero(it.groupValues[1])?.roundToLong() }
+    private fun montosEn(linea: String, soloConSigno: Boolean = false): List<Long> =
+        REGEX_DINERO.findAll(linea)
+            .filter { !soloConSigno || it.groupValues[1].isNotEmpty() }
+            .mapNotNull { numero(it.groupValues[2])?.roundToLong() }
             .filter { it in 100L..50_000_000L }.toList()
 
     fun extraerTotalRecibo(textoOcr: String): Long? {
         val lineas = textoOcr.lines().map { normalizar(it).trim() }.filter { it.isNotEmpty() }
         for (palabra in PALABRAS_TOTAL) {
             for ((i, l) in lineas.withIndex()) {
-                if (contiene(l, palabra) && !l.contains("subtotal") && !l.contains("sub total") && !l.contains("total items")) {
+                if (contiene(l, palabra) && !l.contains("subtotal") && !l.contains("sub total") && !l.contains("total items") &&
+                    LINEAS_NO_MONTO.none { contiene(l, it) }
+                ) {
                     montosEn(l).maxOrNull()?.let { return it }
                     lineas.getOrNull(i + 1)?.let { sig -> montosEn(sig).maxOrNull()?.let { return it } }
                 }
             }
         }
-        // Sin la palabra "total": el valor más alto del recibo (excluye NIT y teléfonos por el rango).
-        return lineas.filterNot { it.contains("nit") || it.contains("tel") || it.contains("cel") }
-            .flatMap { montosEn(it) }.maxOrNull()
+        // Sin palabra clave: primero los valores con signo $, luego el más alto (sin NIT, cuentas ni referencias).
+        val utiles = lineas.filterNot { l -> LINEAS_NO_MONTO.any { contiene(l, it) } || l.contains("*") }
+        return utiles.flatMap { montosEn(it, soloConSigno = true) }.maxOrNull()
+            ?: utiles.flatMap { montosEn(it) }.maxOrNull()
     }
 
     fun interpretarRecibo(
@@ -262,14 +281,39 @@ object Interprete {
         hoy: LocalDate = LocalDate.now()
     ): Propuesta {
         val t = normalizar(textoOcr)
-        val comercio = textoOcr.lines().map { it.trim() }.firstOrNull { l ->
-            l.length >= 3 && l.count { it.isLetter() } >= 3 && !normalizar(l).contains("nit") && !normalizar(l).contains("factura")
-        }.orEmpty()
+        val lineas = textoOcr.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        fun valorDespuesDe(vararg claves: String): String? {
+            // Solo etiquetas cortas ("Comercio", "Nombre o razón social"), no frases largas.
+            val i = lineas.indexOfFirst { l ->
+                val n = normalizar(l)
+                n.substringBefore(":").length <= 30 && claves.any { contiene(n, it) }
+            }
+            if (i < 0) return null
+            // El valor puede estar en la misma línea ("Comercio: X") o en la siguiente.
+            val mismaLinea = lineas[i].substringAfter(":", "").trim()
+            if (mismaLinea.count { it.isLetter() } >= 3) return mismaLinea
+            return lineas.drop(i + 1).take(2).firstOrNull { l -> l.count { it.isLetter() } >= 3 && l.count { it.isDigit() } <= 2 }
+        }
+        val destinatario = valorDespuesDe("producto destino", "destinatario", "beneficiario", "enviado a", "para")
+        val comercioCampo = valorDespuesDe("comercio", "razon social", "convenio", "empresa")
+        val descripcion = valorDespuesDe("descripcion del pago", "descripcion", "concepto")
+        val comercio = when {
+            comercioCampo != null -> comercioCampo
+            descripcion != null -> descripcion
+            destinatario != null -> "Transferencia a $destinatario"
+            else -> lineas.firstOrNull { l ->
+                val n = normalizar(l)
+                l.length >= 3 && l.count { it.isLetter() } >= 3 && !n.contains("nit") && !n.contains("factura") &&
+                    !n.contains("exitos") && !n.contains("comprobante") && !n.contains("aprobada")
+            }.orEmpty()
+        }
+        // El nombre de una persona no debe decidir la categoría ("Luz Janeth" no es el recibo de la luz).
+        val textoCategoria = if (destinatario != null) t.replace(normalizar(destinatario), " ") else t
         val fecha = detectarFecha(t, hoy).let { if (it.isAfter(hoy) || it.isBefore(hoy.minusYears(1))) hoy else it }
         return Propuesta(
             tipo = TipoMovimiento.GASTO,
             monto = extraerTotalRecibo(textoOcr),
-            categoriaId = detectarCategoria(t, TipoMovimiento.GASTO, categorias)?.id,
+            categoriaId = detectarCategoria(textoCategoria, TipoMovimiento.GASTO, categorias)?.id,
             medioId = detectarMedio(t, medios)?.id,
             fecha = fecha,
             nota = comercio.take(60),

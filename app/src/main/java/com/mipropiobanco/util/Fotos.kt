@@ -26,9 +26,13 @@ object Fotos {
     /** Copia la imagen (de la cámara o la galería) reducida, girada según EXIF, y devuelve su ruta. */
     fun guardarReducida(context: Context, origen: Uri): String {
         val resolver = context.contentResolver
+        // Con inJustDecodeBounds, decodeStream siempre devuelve null: solo llena las medidas.
         val limites = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(origen)?.use { BitmapFactory.decodeStream(it, null, limites) }
-            ?: throw IllegalStateException("No se pudo abrir la imagen")
+        val entrada = resolver.openInputStream(origen) ?: throw IllegalStateException("No se pudo abrir la imagen")
+        entrada.use { BitmapFactory.decodeStream(it, null, limites) }
+        if (limites.outWidth <= 0 || limites.outHeight <= 0) {
+            throw IllegalStateException("El archivo no es una imagen compatible")
+        }
         var muestra = 1
         while (max(limites.outWidth, limites.outHeight) / (muestra * 2) >= LADO_MAXIMO) muestra *= 2
 
