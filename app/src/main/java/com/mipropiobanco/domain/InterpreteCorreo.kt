@@ -118,7 +118,7 @@ object InterpreteCorreo {
             return crear(TipoMovimiento.GASTO, it.groupValues[1], it.groupValues[2], "Compra en ${limpiar(it.groupValues[2])}")
         }
         // Pagaste $X a NOMBRE desde tu producto ...
-        Regex("pagaste $DINERO (?:a|en) (.+?)(?: desde | con | el |,|$)", op).find(f)?.let {
+        Regex("pagaste $DINERO (?:por .+? )?(?:a|en) (.+?)(?: desde | con | el |,|$)", op).find(f)?.let {
             return crear(TipoMovimiento.GASTO, it.groupValues[1], it.groupValues[2], "Pago a ${limpiar(it.groupValues[2])}")
         }
         // Transferiste $X desde tu cuenta *3888 a la cuenta *3012316181
@@ -126,7 +126,7 @@ object InterpreteCorreo {
             val cuenta = it.groupValues[2]
             return crear(TipoMovimiento.GASTO, it.groupValues[1], "Cuenta *$cuenta", "Transferencia a la cuenta *$cuenta", cuenta = cuenta)
         }
-        Regex("transferiste $DINERO (?:a|para) (.+?)(?: desde | el |,|$)", op).find(f)?.let {
+        Regex("transferiste $DINERO (?:por .+? )?(?:a|para) (.+?)(?: desde | el |,|$)", op).find(f)?.let {
             return crear(TipoMovimiento.GASTO, it.groupValues[1], it.groupValues[2], "Transferencia a ${limpiar(it.groupValues[2])}")
         }
         return null
