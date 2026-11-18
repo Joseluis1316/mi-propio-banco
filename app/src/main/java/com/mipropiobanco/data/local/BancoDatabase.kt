@@ -15,9 +15,13 @@ import kotlin.math.pow
         PrestamoEntity::class,
         PagoEntity::class,
         DeudaEntity::class,
-        AbonoDeudaEntity::class
+        AbonoDeudaEntity::class,
+        CategoriaEntity::class,
+        MedioPagoEntity::class,
+        MovimientoEntity::class,
+        PlantillaEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class BancoDatabase : RoomDatabase() {
@@ -27,14 +31,19 @@ abstract class BancoDatabase : RoomDatabase() {
     abstract fun pagoDao(): PagoDao
     abstract fun deudaDao(): DeudaDao
     abstract fun abonoDeudaDao(): AbonoDeudaDao
+    abstract fun categoriaDao(): CategoriaDao
+    abstract fun medioPagoDao(): MedioPagoDao
+    abstract fun movimientoDao(): MovimientoDao
+    abstract fun plantillaDao(): PlantillaDao
 
     companion object {
         fun crear(context: Context): BancoDatabase =
             Room.databaseBuilder(context, BancoDatabase::class.java, "mi_propio_banco.db")
-                .addMigrations(MIGRACION_1_2)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         sembrarTipos(db)
+                        sembrarFinanzas(db)
                     }
                 })
                 .build()
@@ -54,6 +63,83 @@ abstract class BancoDatabase : RoomDatabase() {
             TipoPrestamoEntity(nombre = "Popular productivo rural", tasaEA = 66.90, tasaMoraEA = 66.90),
             TipoPrestamoEntity(nombre = "Personal suave (1,5% mes)", tasaEA = 19.56, tasaMoraEA = 28.34)
         )
+
+        /** Plantillas de categorías (se pueden editar, borrar o crear nuevas). */
+        val CATEGORIAS_INICIALES = listOf(
+            CategoriaEntity(nombre = "Arriendo", tipo = "GASTO", icono = "🏠"),
+            CategoriaEntity(nombre = "Mercado", tipo = "GASTO", icono = "🛒"),
+            CategoriaEntity(nombre = "Servicios públicos", tipo = "GASTO", icono = "💡"),
+            CategoriaEntity(nombre = "Celular e internet", tipo = "GASTO", icono = "📱"),
+            CategoriaEntity(nombre = "Transporte", tipo = "GASTO", icono = "🚌"),
+            CategoriaEntity(nombre = "Gasolina", tipo = "GASTO", icono = "⛽"),
+            CategoriaEntity(nombre = "Comida fuera", tipo = "GASTO", icono = "🍔"),
+            CategoriaEntity(nombre = "Salud", tipo = "GASTO", icono = "🏥"),
+            CategoriaEntity(nombre = "Educación", tipo = "GASTO", icono = "📚"),
+            CategoriaEntity(nombre = "Ropa", tipo = "GASTO", icono = "👕"),
+            CategoriaEntity(nombre = "Ocio", tipo = "GASTO", icono = "🎉"),
+            CategoriaEntity(nombre = "Pago de deudas", tipo = "GASTO", icono = "💳"),
+            CategoriaEntity(nombre = "Viajes de trabajo", tipo = "GASTO", icono = "🧳"),
+            CategoriaEntity(nombre = "Mascotas", tipo = "GASTO", icono = "🐾"),
+            CategoriaEntity(nombre = "Regalos", tipo = "GASTO", icono = "🎁"),
+            CategoriaEntity(nombre = "Otros gastos", tipo = "GASTO", icono = "📦"),
+            CategoriaEntity(nombre = "Salario", tipo = "INGRESO", icono = "💼"),
+            CategoriaEntity(nombre = "Independiente / honorarios", tipo = "INGRESO", icono = "🧾"),
+            CategoriaEntity(nombre = "Arriendos recibidos", tipo = "INGRESO", icono = "🏘️"),
+            CategoriaEntity(nombre = "Ventas", tipo = "INGRESO", icono = "💰"),
+            CategoriaEntity(nombre = "Intereses y rendimientos", tipo = "INGRESO", icono = "📈"),
+            CategoriaEntity(nombre = "Viáticos y reembolsos", tipo = "INGRESO", icono = "↩️"),
+            CategoriaEntity(nombre = "Regalos recibidos", tipo = "INGRESO", icono = "🎀"),
+            CategoriaEntity(nombre = "Otros ingresos", tipo = "INGRESO", icono = "➕")
+        )
+
+        val MEDIOS_INICIALES = listOf(
+            MedioPagoEntity(nombre = "Efectivo", icono = "💵"),
+            MedioPagoEntity(nombre = "Transferencia", icono = "🏦"),
+            MedioPagoEntity(nombre = "Nequi", icono = "📲"),
+            MedioPagoEntity(nombre = "Daviplata", icono = "📲"),
+            MedioPagoEntity(nombre = "Bre-B / llave", icono = "⚡"),
+            MedioPagoEntity(nombre = "Tarjeta débito", icono = "💳"),
+            MedioPagoEntity(nombre = "Tarjeta crédito", icono = "💳")
+        )
+
+        private fun sembrarFinanzas(db: SupportSQLiteDatabase) {
+            CATEGORIAS_INICIALES.forEach { c ->
+                db.execSQL(
+                    "INSERT INTO categorias (nombre, tipo, icono, presupuestoMensual) VALUES (?, ?, ?, 0)",
+                    arrayOf<Any>(c.nombre, c.tipo, c.icono)
+                )
+            }
+            MEDIOS_INICIALES.forEach { m ->
+                db.execSQL("INSERT INTO medios_pago (nombre, icono) VALUES (?, ?)", arrayOf<Any>(m.nombre, m.icono))
+            }
+        }
+
+        /** Versión 2 → 3: ingresos, gastos, categorías, medios de pago y plantillas fijas. */
+        val MIGRACION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "nombre TEXT NOT NULL, tipo TEXT NOT NULL, icono TEXT NOT NULL, presupuestoMensual INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS medios_pago (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "nombre TEXT NOT NULL, icono TEXT NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS movimientos (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "tipo TEXT NOT NULL, monto INTEGER NOT NULL, categoriaId INTEGER NOT NULL, medioId INTEGER NOT NULL, " +
+                        "fecha INTEGER NOT NULL, nota TEXT NOT NULL, plantillaId INTEGER)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_movimientos_fecha ON movimientos (fecha)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS plantillas (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "nombre TEXT NOT NULL, tipo TEXT NOT NULL, monto INTEGER NOT NULL, categoriaId INTEGER NOT NULL, " +
+                        "medioId INTEGER NOT NULL, periodicidad TEXT NOT NULL, fechaInicio INTEGER NOT NULL, " +
+                        "automatica INTEGER NOT NULL, activa INTEGER NOT NULL, ultimaOcurrencia INTEGER NOT NULL)"
+                )
+                sembrarFinanzas(db)
+            }
+        }
 
         private fun sembrarTipos(db: SupportSQLiteDatabase) {
             TIPOS_INICIALES.forEach { t ->

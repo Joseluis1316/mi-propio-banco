@@ -11,6 +11,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.mipropiobanco.data.backup.BackupManager
 import com.mipropiobanco.data.prefs.AjustesPreferencias
 import com.mipropiobanco.data.repository.BancoRepository
+import com.mipropiobanco.data.repository.FinanzasRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -45,6 +47,7 @@ sealed interface EstadoNube {
 class SincronizacionNube(
     private val respaldo: BackupManager,
     private val repo: BancoRepository,
+    private val finanzas: FinanzasRepository,
     private val prefs: AjustesPreferencias,
     private val alcance: CoroutineScope
 ) {
@@ -78,9 +81,11 @@ class SincronizacionNube(
     @OptIn(FlowPreview::class)
     fun iniciarAutoGuardado() {
         alcance.launch {
-            combine(repo.aportes, repo.prestamosConPagos, repo.deudas, repo.tipos, prefs.presupuestoDeudas) { a, p, d, t, b ->
-                listOf(a, p, d, t, b)
-            }
+            val fuentes: List<Flow<Any>> = listOf(
+                repo.aportes, repo.prestamosConPagos, repo.deudas, repo.tipos, prefs.presupuestoDeudas,
+                finanzas.movimientos, finanzas.categorias, finanzas.medios, finanzas.plantillas
+            )
+            combine(fuentes) { valores -> valores.toList() }
                 .distinctUntilChanged()
                 .drop(1)
                 .onEach { if (!importando) prefs.marcarModificado() }

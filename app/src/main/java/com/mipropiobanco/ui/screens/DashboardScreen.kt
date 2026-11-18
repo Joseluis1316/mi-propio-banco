@@ -16,7 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.RemoveCircle
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.RequestQuote
@@ -50,18 +53,24 @@ import com.mipropiobanco.util.Formato
 @Composable
 fun DashboardScreen(
     vm: BancoViewModel,
+    alNuevoMovimiento: (String) -> Unit,
     alNuevoAporte: () -> Unit,
     alNuevoPrestamo: () -> Unit,
     alRegistrarPago: () -> Unit,
-    alRespaldo: () -> Unit,
     alAbrirPrestamo: (Long) -> Unit,
-    alVerDeudas: () -> Unit
+    alVerDeudas: () -> Unit,
+    alVerMovimientos: () -> Unit,
+    alAjustes: () -> Unit
 ) {
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
     val activos = prestamos.filter { !it.prestamo.pagado }
     val plan by vm.planDeudas.collectAsStateWithLifecycle()
     val ahora = rememberAhora()
+    val movimientos by vm.movimientos.collectAsStateWithLifecycle()
+    val plantillas by vm.plantillas.collectAsStateWithLifecycle()
+    val resumenMes = com.mipropiobanco.domain.ResumenMes.de(movimientos, java.time.YearMonth.now())
+    val porRegistrar = plantillas.sumOf { com.mipropiobanco.domain.Recurrencia.pendientes(it, java.time.LocalDate.now()).size }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -69,17 +78,43 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Column {
-                Text(
-                    "Mi Propio Banco",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Tu fondo de autofinanciamiento",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Mi Propio Banco",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Tus finanzas en un solo lugar",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = alAjustes) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Ajustes")
+                }
+            }
+        }
+        item {
+            Card(onClick = alVerMovimientos, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Este mes", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    com.mipropiobanco.ui.components.FilaResumen("Ingresos", Formato.cop(resumenMes.ingresos))
+                    com.mipropiobanco.ui.components.FilaResumen("Gastos", Formato.cop(resumenMes.gastos))
+                    com.mipropiobanco.ui.components.FilaResumen(
+                        if (resumenMes.balance >= 0L) "Te sobra" else "Te faltó",
+                        Formato.cop(resumenMes.balance),
+                        destacado = true
+                    )
+                    if (porRegistrar > 0) {
+                        Text(
+                            "📌 Tienes $porRegistrar fijos por registrar",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
             }
         }
         item { TarjetaCapitalTotal(resumen) }
@@ -116,10 +151,10 @@ fun DashboardScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccionRapida("Gasto", Icons.Filled.RemoveCircle, { alNuevoMovimiento("GASTO") }, Modifier.weight(1f))
+                AccionRapida("Ingreso", Icons.Filled.AddCircle, { alNuevoMovimiento("INGRESO") }, Modifier.weight(1f))
                 AccionRapida("Aporte", Icons.Filled.Savings, alNuevoAporte, Modifier.weight(1f))
                 AccionRapida("Préstamo", Icons.Filled.RequestQuote, alNuevoPrestamo, Modifier.weight(1f))
-                AccionRapida("Pagar", Icons.Filled.Payments, alRegistrarPago, Modifier.weight(1f))
-                AccionRapida("Respaldo", Icons.Filled.Backup, alRespaldo, Modifier.weight(1f))
             }
         }
         item {

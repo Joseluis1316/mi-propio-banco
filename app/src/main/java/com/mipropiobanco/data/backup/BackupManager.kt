@@ -4,6 +4,10 @@ import androidx.room.withTransaction
 import com.mipropiobanco.data.local.AbonoDeudaEntity
 import com.mipropiobanco.data.local.AporteEntity
 import com.mipropiobanco.data.local.BancoDatabase
+import com.mipropiobanco.data.local.CategoriaEntity
+import com.mipropiobanco.data.local.MedioPagoEntity
+import com.mipropiobanco.data.local.MovimientoEntity
+import com.mipropiobanco.data.local.PlantillaEntity
 import com.mipropiobanco.data.local.DeudaEntity
 import com.mipropiobanco.data.local.PagoEntity
 import com.mipropiobanco.data.local.PrestamoEntity
@@ -30,7 +34,11 @@ class BackupManager(
         val prestamos: List<PrestamoEntity>,
         val pagos: List<PagoEntity>,
         val deudas: List<DeudaEntity>,
-        val abonos: List<AbonoDeudaEntity>
+        val abonos: List<AbonoDeudaEntity>,
+        val categorias: List<CategoriaEntity>?,
+        val medios: List<MedioPagoEntity>?,
+        val movimientos: List<MovimientoEntity>,
+        val plantillas: List<PlantillaEntity>
     )
 
     suspend fun exportarJson(): String = withContext(Dispatchers.IO) {
@@ -103,6 +111,38 @@ class BackupManager(
                 put(JSONObject().put("id", a.id).put("deudaId", a.deudaId).put("fecha", a.fecha).put("monto", a.monto))
             }
         })
+        raiz.put("categorias", JSONArray().apply {
+            db.categoriaDao().obtenerTodas().forEach { c ->
+                put(
+                    JSONObject().put("id", c.id).put("nombre", c.nombre).put("tipo", c.tipo)
+                        .put("icono", c.icono).put("presupuestoMensual", c.presupuestoMensual)
+                )
+            }
+        })
+        raiz.put("mediosPago", JSONArray().apply {
+            db.medioPagoDao().obtenerTodos().forEach { m ->
+                put(JSONObject().put("id", m.id).put("nombre", m.nombre).put("icono", m.icono))
+            }
+        })
+        raiz.put("movimientos", JSONArray().apply {
+            db.movimientoDao().obtenerTodos().forEach { m ->
+                put(
+                    JSONObject().put("id", m.id).put("tipo", m.tipo).put("monto", m.monto)
+                        .put("categoriaId", m.categoriaId).put("medioId", m.medioId).put("fecha", m.fecha)
+                        .put("nota", m.nota).put("plantillaId", m.plantillaId ?: JSONObject.NULL)
+                )
+            }
+        })
+        raiz.put("plantillas", JSONArray().apply {
+            db.plantillaDao().obtenerTodas().forEach { p ->
+                put(
+                    JSONObject().put("id", p.id).put("nombre", p.nombre).put("tipo", p.tipo).put("monto", p.monto)
+                        .put("categoriaId", p.categoriaId).put("medioId", p.medioId).put("periodicidad", p.periodicidad)
+                        .put("fechaInicio", p.fechaInicio).put("automatica", p.automatica).put("activa", p.activa)
+                        .put("ultimaOcurrencia", p.ultimaOcurrencia)
+                )
+            }
+        })
         raiz.toString(2)
     }
 
@@ -140,6 +180,18 @@ class BackupManager(
             db.pagoDao().insertarTodos(datos.pagos)
             db.deudaDao().insertarTodas(datos.deudas)
             db.abonoDeudaDao().insertarTodos(datos.abonos)
+            db.movimientoDao().borrarTodo()
+            db.plantillaDao().borrarTodo()
+            if (datos.categorias != null && datos.categorias.isNotEmpty()) {
+                db.categoriaDao().borrarTodo()
+                db.categoriaDao().insertarTodas(datos.categorias)
+            }
+            if (datos.medios != null && datos.medios.isNotEmpty()) {
+                db.medioPagoDao().borrarTodo()
+                db.medioPagoDao().insertarTodos(datos.medios)
+            }
+            db.movimientoDao().insertarTodos(datos.movimientos)
+            db.plantillaDao().insertarTodas(datos.plantillas)
             if (datos.tipos != null && datos.tipos.isNotEmpty()) {
                 db.tipoPrestamoDao().borrarTodo()
                 db.tipoPrestamoDao().insertarTodos(datos.tipos)
@@ -149,7 +201,7 @@ class BackupManager(
             preferencias.cambiarPresupuestoDeudas(raiz.optLong("presupuestoDeudas", 0L))
         }
         "Respaldo importado: ${datos.aportes.size} aportes, ${datos.prestamos.size} préstamos, " +
-            "${datos.deudas.size} deudas"
+            "${datos.deudas.size} deudas, ${datos.movimientos.size} movimientos"
     }
 
     private fun leer(raiz: JSONObject): Datos {
@@ -220,14 +272,42 @@ class BackupManager(
                 monto = it.getLong("monto")
             )
         }.orEmpty()
-        return Datos(aportes, tipos, prestamos, pagos, deudas, abonos)
+        val categorias = raiz.optJSONArray("categorias")?.objetos()?.map {
+            CategoriaEntity(
+                id = it.getLong("id"), nombre = it.getString("nombre"), tipo = it.getString("tipo"),
+                icono = it.getString("icono"), presupuestoMensual = it.optLong("presupuestoMensual", 0L)
+            )
+        }
+        val medios = raiz.optJSONArray("mediosPago")?.objetos()?.map {
+            MedioPagoEntity(id = it.getLong("id"), nombre = it.getString("nombre"), icono = it.getString("icono"))
+        }
+        val movimientos = raiz.optJSONArray("movimientos")?.objetos()?.map {
+            MovimientoEntity(
+                id = it.getLong("id"), tipo = it.getString("tipo"), monto = it.getLong("monto"),
+                categoriaId = it.getLong("categoriaId"), medioId = it.getLong("medioId"), fecha = it.getLong("fecha"),
+                nota = it.optString("nota", ""),
+                plantillaId = if (it.isNull("plantillaId")) null else it.getLong("plantillaId")
+            )
+        }.orEmpty()
+        val plantillas = raiz.optJSONArray("plantillas")?.objetos()?.map {
+            PlantillaEntity(
+                id = it.getLong("id"), nombre = it.getString("nombre"), tipo = it.getString("tipo"),
+                monto = it.getLong("monto"), categoriaId = it.getLong("categoriaId"), medioId = it.getLong("medioId"),
+                periodicidad = it.getString("periodicidad"), fechaInicio = it.getLong("fechaInicio"),
+                automatica = it.getBoolean("automatica"), activa = it.optBoolean("activa", true),
+                ultimaOcurrencia = it.optInt("ultimaOcurrencia", -1)
+            )
+        }.orEmpty()
+        return Datos(aportes, tipos, prestamos, pagos, deudas, abonos, categorias, medios, movimientos, plantillas)
     }
 
     /** true si este celular no tiene aportes, préstamos ni deudas registrados. */
     suspend fun estaVacio(): Boolean = withContext(Dispatchers.IO) {
         db.aporteDao().obtenerTodos().isEmpty() &&
             db.prestamoDao().obtenerTodos().isEmpty() &&
-            db.deudaDao().obtenerTodas().isEmpty()
+            db.deudaDao().obtenerTodas().isEmpty() &&
+            db.movimientoDao().obtenerTodos().isEmpty() &&
+            db.plantillaDao().obtenerTodas().isEmpty()
     }
 
     /** Deja la app como recién instalada (se usa al cerrar sesión). */
@@ -240,6 +320,12 @@ class BackupManager(
             db.deudaDao().borrarTodo()
             db.tipoPrestamoDao().borrarTodo()
             db.tipoPrestamoDao().insertarTodos(BancoDatabase.TIPOS_INICIALES)
+            db.movimientoDao().borrarTodo()
+            db.plantillaDao().borrarTodo()
+            db.categoriaDao().borrarTodo()
+            db.categoriaDao().insertarTodas(BancoDatabase.CATEGORIAS_INICIALES)
+            db.medioPagoDao().borrarTodo()
+            db.medioPagoDao().insertarTodos(BancoDatabase.MEDIOS_INICIALES)
         }
         preferencias.cambiarPresupuestoDeudas(0L)
     }
@@ -281,6 +367,14 @@ class BackupManager(
                 a.monto, "", "", "", "", a.deudaId, ""
             )
         }
+        val categorias = db.categoriaDao().obtenerTodas().associateBy { it.id }
+        val medios = db.medioPagoDao().obtenerTodos().associateBy { it.id }
+        db.movimientoDao().obtenerTodos().forEach { m ->
+            val signo = if (m.tipo == "GASTO") -1L else 1L
+            val concepto = listOf(categorias[m.categoriaId]?.nombre.orEmpty(), medios[m.medioId]?.nombre.orEmpty(), m.nota)
+                .filter { it.isNotBlank() }.joinToString(" · ")
+            sb.fila(m.tipo, Formato.fechaIso(m.fecha), concepto, signo * m.monto, "", "", "", "", m.categoriaId, "")
+        }
         sb.toString()
     }
 
@@ -298,6 +392,6 @@ class BackupManager(
 
     companion object {
         private const val APP_ID = "MiPropioBanco"
-        private const val VERSION = 2
+        private const val VERSION = 3
     }
 }

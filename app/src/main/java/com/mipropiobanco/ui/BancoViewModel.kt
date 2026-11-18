@@ -8,6 +8,13 @@ import com.mipropiobanco.MiPropioBancoApp
 import com.mipropiobanco.data.local.AbonoDeudaEntity
 import com.mipropiobanco.data.local.AporteEntity
 import com.mipropiobanco.data.local.TipoPrestamoEntity
+import com.mipropiobanco.data.local.CategoriaEntity
+import com.mipropiobanco.data.local.MedioPagoEntity
+import com.mipropiobanco.data.local.MovimientoEntity
+import com.mipropiobanco.data.local.PlantillaEntity
+import com.mipropiobanco.data.repository.DatosRepeticion
+import com.mipropiobanco.domain.Ocurrencia
+import com.mipropiobanco.domain.TipoMovimiento
 import com.mipropiobanco.data.prefs.ModoTema
 import com.mipropiobanco.data.sync.EstadoNube
 import com.mipropiobanco.data.sync.SincronizacionNube
@@ -39,6 +46,98 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     private val respaldo = app.respaldo
     private val preferencias = app.preferencias
     private val nube = app.nube
+    private val finanzas = app.finanzas
+
+    // ---------- Ingresos, gastos y plantillas ----------
+
+    val categorias: StateFlow<List<CategoriaEntity>> =
+        finanzas.categorias.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val medios: StateFlow<List<MedioPagoEntity>> =
+        finanzas.medios.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val movimientos: StateFlow<List<MovimientoEntity>> =
+        finanzas.movimientos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val plantillas: StateFlow<List<PlantillaEntity>> =
+        finanzas.plantillas.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun guardarMovimiento(
+        id: Long?,
+        tipo: TipoMovimiento,
+        monto: Long,
+        categoriaId: Long,
+        medioId: Long,
+        fecha: Long,
+        nota: String,
+        repetir: DatosRepeticion?,
+        plantillaIdExistente: Long? = null
+    ) = ejecutar(
+        accion = { finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente) },
+        mensaje = {
+            when {
+                id != null -> "Movimiento actualizado"
+                repetir != null -> "${tipo.etiqueta} guardado y plantilla fija creada"
+                else -> "${tipo.etiqueta} de ${Formato.cop(monto)} guardado"
+            }
+        }
+    )
+
+    fun eliminarMovimiento(m: MovimientoEntity) = ejecutar(
+        accion = { finanzas.eliminarMovimiento(m) },
+        mensaje = { "Movimiento eliminado" }
+    )
+
+    fun guardarCategoria(id: Long?, nombre: String, tipo: TipoMovimiento, icono: String, presupuesto: Long) = ejecutar(
+        accion = { finanzas.guardarCategoria(id, nombre, tipo, icono, presupuesto) },
+        mensaje = { "Categoría guardada" }
+    )
+
+    fun eliminarCategoria(c: CategoriaEntity) = ejecutar(
+        accion = { finanzas.eliminarCategoria(c) },
+        mensaje = { "Categoría eliminada" }
+    )
+
+    fun guardarMedio(id: Long?, nombre: String, icono: String) = ejecutar(
+        accion = { finanzas.guardarMedio(id, nombre, icono) },
+        mensaje = { "Medio de pago guardado" }
+    )
+
+    fun eliminarMedio(m: MedioPagoEntity) = ejecutar(
+        accion = { finanzas.eliminarMedio(m) },
+        mensaje = { "Medio de pago eliminado" }
+    )
+
+    fun guardarPlantilla(
+        id: Long?,
+        nombre: String,
+        tipo: TipoMovimiento,
+        monto: Long,
+        categoriaId: Long,
+        medioId: Long,
+        periodicidad: Periodicidad,
+        fechaInicio: Long,
+        automatica: Boolean,
+        activa: Boolean
+    ) = ejecutar(
+        accion = {
+            finanzas.guardarPlantilla(id, nombre, tipo, monto, categoriaId, medioId, periodicidad, fechaInicio, automatica, activa)
+            finanzas.procesarAutomaticas()
+        },
+        mensaje = { n -> if (n > 0) "Plantilla guardada · $n movimientos registrados" else "Plantilla guardada" }
+    )
+
+    fun eliminarPlantilla(p: PlantillaEntity) = ejecutar(
+        accion = { finanzas.eliminarPlantilla(p) },
+        mensaje = { "Plantilla eliminada (los movimientos ya registrados se conservan)" }
+    )
+
+    fun registrarOcurrencia(o: Ocurrencia, monto: Long) = ejecutar(
+        accion = { finanzas.registrarOcurrencia(o, monto) },
+        mensaje = { "«${o.plantilla.nombre}» registrado" }
+    )
+
+    fun omitirOcurrencia(o: Ocurrencia) = ejecutar(
+        accion = { finanzas.omitirOcurrencia(o) },
+        mensaje = { "«${o.plantilla.nombre}» omitido esta vez" }
+    )
 
     // ---------- Cuenta y nube ----------
 
@@ -249,6 +348,19 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         accion = { respaldo.importarJson(leer(uri)) },
         mensaje = { it }
     )
+
+    init {
+        // Al abrir la app se registran solas las plantillas automáticas que ya vencieron.
+        viewModelScope.launch {
+            try {
+                val n = finanzas.procesarAutomaticas()
+                if (n > 0) _mensajes.emit("Se registraron $n movimientos fijos automáticos")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     private suspend fun escribir(uri: Uri, texto: String) = withContext(Dispatchers.IO) {
         val salida = app.contentResolver.openOutputStream(uri)

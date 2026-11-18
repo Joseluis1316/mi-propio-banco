@@ -8,6 +8,9 @@ App para administrar tu fondo de autofinanciamiento y salir de deudas. Funciona 
 - **Autopréstamos:** tipos de préstamo con tasas editables (por defecto, la tasa de usura vigente de la Superfinanciera), cuotas diarias, semanales, quincenales, mensuales o anuales, cuota fija (sistema francés) y tabla con fechas de vencimiento.
 - **Cronómetro y mora:** cuenta regresiva hasta cada vencimiento; si pagas tarde se cobra interés de mora por día de atraso, que también entra a la bóveda.
 - **Deudas con terceros (bola de nieve):** orden de ataque de menor a mayor saldo, pago mínimo en las demás y excedente al objetivo; cuando liquidas una, su pago se suma a la siguiente. Muestra cuánto pagar este mes, cuándo quedas libre y el cronómetro de cada fecha de pago.
+- **Ingresos y gastos:** sin límites ni formas fijas; categorías editables con presupuesto mensual, medios de pago (efectivo, transferencia, Nequi, Daviplata, tarjetas…) y resumen por mes.
+- **Plantillas fijas:** ingresos o gastos que se repiten cada día, semana, quincena, mes o año; se registran solos o quedan "por registrar" para confirmar el monto.
+- **Calendario:** ingresos, gastos, fijos programados, cuotas de autopréstamos y pagos de deudas en una vista mensual.
 - **Respaldo:** exportar/importar JSON y exportar CSV.
 
 ## Cuenta y nube (Firebase)

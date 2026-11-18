@@ -168,3 +168,114 @@ interface AbonoDeudaDao {
     @Query("DELETE FROM abonos_deuda")
     suspend fun borrarTodo()
 }
+
+@Dao
+interface CategoriaDao {
+    @Query("SELECT * FROM categorias ORDER BY tipo DESC, nombre ASC")
+    fun observarTodas(): Flow<List<CategoriaEntity>>
+
+    @Query("SELECT * FROM categorias ORDER BY id ASC")
+    suspend fun obtenerTodas(): List<CategoriaEntity>
+
+    @Insert
+    suspend fun insertar(categoria: CategoriaEntity): Long
+
+    @Insert
+    suspend fun insertarTodas(categorias: List<CategoriaEntity>)
+
+    @Update
+    suspend fun actualizar(categoria: CategoriaEntity)
+
+    @Delete
+    suspend fun eliminar(categoria: CategoriaEntity)
+
+    @Query("DELETE FROM categorias")
+    suspend fun borrarTodo()
+}
+
+@Dao
+interface MedioPagoDao {
+    @Query("SELECT * FROM medios_pago ORDER BY id ASC")
+    fun observarTodos(): Flow<List<MedioPagoEntity>>
+
+    @Query("SELECT * FROM medios_pago ORDER BY id ASC")
+    suspend fun obtenerTodos(): List<MedioPagoEntity>
+
+    @Insert
+    suspend fun insertar(medio: MedioPagoEntity): Long
+
+    @Insert
+    suspend fun insertarTodos(medios: List<MedioPagoEntity>)
+
+    @Update
+    suspend fun actualizar(medio: MedioPagoEntity)
+
+    @Delete
+    suspend fun eliminar(medio: MedioPagoEntity)
+
+    @Query("DELETE FROM medios_pago")
+    suspend fun borrarTodo()
+}
+
+@Dao
+interface MovimientoDao {
+    @Query("SELECT * FROM movimientos ORDER BY fecha DESC, id DESC")
+    fun observarTodos(): Flow<List<MovimientoEntity>>
+
+    @Query("SELECT * FROM movimientos ORDER BY id ASC")
+    suspend fun obtenerTodos(): List<MovimientoEntity>
+
+    @Query("SELECT COUNT(*) FROM movimientos WHERE categoriaId = :id")
+    suspend fun contarPorCategoria(id: Long): Int
+
+    @Query("SELECT COUNT(*) FROM movimientos WHERE medioId = :id")
+    suspend fun contarPorMedio(id: Long): Int
+
+    @Insert
+    suspend fun insertar(movimiento: MovimientoEntity): Long
+
+    @Insert
+    suspend fun insertarTodos(movimientos: List<MovimientoEntity>)
+
+    @Update
+    suspend fun actualizar(movimiento: MovimientoEntity)
+
+    @Delete
+    suspend fun eliminar(movimiento: MovimientoEntity)
+
+    @Query("DELETE FROM movimientos")
+    suspend fun borrarTodo()
+}
+
+@Dao
+interface PlantillaDao {
+    @Query("SELECT * FROM plantillas ORDER BY activa DESC, nombre ASC")
+    fun observarTodas(): Flow<List<PlantillaEntity>>
+
+    @Query("SELECT * FROM plantillas ORDER BY id ASC")
+    suspend fun obtenerTodas(): List<PlantillaEntity>
+
+    @Query("SELECT * FROM plantillas WHERE id = :id")
+    suspend fun obtenerPorId(id: Long): PlantillaEntity?
+
+    @Query("SELECT COUNT(*) FROM plantillas WHERE categoriaId = :id")
+    suspend fun contarPorCategoria(id: Long): Int
+
+    @Query("SELECT COUNT(*) FROM plantillas WHERE medioId = :id")
+    suspend fun contarPorMedio(id: Long): Int
+
+    @Insert
+    suspend fun insertar(plantilla: PlantillaEntity): Long
+
+    @Insert
+    suspend fun insertarTodas(plantillas: List<PlantillaEntity>)
+
+    @Update
+    suspend fun actualizar(plantilla: PlantillaEntity)
+
+    @Delete
+    suspend fun eliminar(plantilla: PlantillaEntity)
+
+    @Query("DELETE FROM plantillas")
+    suspend fun borrarTodo()
+}

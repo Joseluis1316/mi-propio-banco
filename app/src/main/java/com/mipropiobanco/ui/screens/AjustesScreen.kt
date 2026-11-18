@@ -67,7 +67,7 @@ val REGLAMENTO = listOf(
 )
 
 @Composable
-fun AjustesScreen(vm: BancoViewModel) {
+fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: () -> Unit) {
     val modo by vm.modoTema.collectAsStateWithLifecycle()
     var confirmarImportacion by remember { mutableStateOf(false) }
     val tipos by vm.tipos.collectAsStateWithLifecycle()
@@ -91,7 +91,7 @@ fun AjustesScreen(vm: BancoViewModel) {
     ) { uri -> uri?.let { vm.importarJson(it) } }
 
     Column(Modifier.fillMaxSize()) {
-        Encabezado("Ajustes y respaldo")
+        Encabezado("Ajustes y respaldo", alVolver = alVolver)
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -132,6 +132,17 @@ fun AjustesScreen(vm: BancoViewModel) {
                             Icon(Icons.Filled.CloudSync, contentDescription = null)
                             Text("  Iniciar sesión o crear cuenta")
                         }
+                    }
+                }
+            }
+            item {
+                Seccion("Ingresos y gastos") {
+                    Text(
+                        "Plantillas fijas, categorías con presupuesto y medios de pago.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = alConfigFinanzas, modifier = Modifier.fillMaxWidth()) {
+                        Text("Plantillas, categorías y medios de pago")
                     }
                 }
             }

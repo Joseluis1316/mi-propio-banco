@@ -1,12 +1,13 @@
 package com.mipropiobanco.ui.navigation
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.Savings
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -30,24 +32,27 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.screens.AjustesScreen
-import com.mipropiobanco.ui.screens.AportesScreen
+import com.mipropiobanco.ui.screens.BancoScreen
+import com.mipropiobanco.ui.screens.CalendarioScreen
+import com.mipropiobanco.ui.screens.ConfiguracionFinanzasScreen
 import com.mipropiobanco.ui.screens.DashboardScreen
-import com.mipropiobanco.ui.screens.LoginScreen
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.DetalleDeudaScreen
 import com.mipropiobanco.ui.screens.DetallePrestamoScreen
+import com.mipropiobanco.ui.screens.DeudasScreen
+import com.mipropiobanco.ui.screens.LoginScreen
+import com.mipropiobanco.ui.screens.MovimientosScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
-import com.mipropiobanco.ui.screens.PrestamosScreen
 
 private object Rutas {
     const val INICIO = "inicio"
-    const val APORTES = "aportes"
-    const val PRESTAMOS = "prestamos"
+    const val MOVIMIENTOS = "movimientos"
+    const val CALENDARIO = "calendario"
+    const val BANCO = "banco"
+    const val DEUDAS = "deudas"
     const val AJUSTES = "ajustes"
+    const val CONFIG_FINANZAS = "config_finanzas"
     const val NUEVO_PRESTAMO = "nuevo_prestamo"
     const val DETALLE_PRESTAMO = "prestamo"
-    const val DEUDAS = "deudas"
     const val DETALLE_DEUDA = "deuda"
 }
 
@@ -55,10 +60,10 @@ private data class Destino(val ruta: String, val etiqueta: String, val icono: Im
 
 private val destinosPrincipales = listOf(
     Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
-    Destino(Rutas.APORTES, "Aportes", Icons.Filled.Savings),
-    Destino(Rutas.PRESTAMOS, "Préstamos", Icons.Filled.RequestQuote),
-    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard),
-    Destino(Rutas.AJUSTES, "Ajustes", Icons.Filled.Settings)
+    Destino(Rutas.MOVIMIENTOS, "Gastos", Icons.Filled.AccountBalanceWallet),
+    Destino(Rutas.CALENDARIO, "Calendario", Icons.Filled.CalendarMonth),
+    Destino(Rutas.BANCO, "Mi banco", Icons.Filled.Savings),
+    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard)
 )
 
 private fun NavHostController.irAPestana(ruta: String) {
@@ -66,6 +71,14 @@ private fun NavHostController.irAPestana(ruta: String) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/** Abre una pestaña con argumentos nuevos (sin restaurar el estado anterior). */
+private fun NavHostController.irAPestanaCon(ruta: String) {
+    navigate(ruta) {
+        popUpTo(graph.findStartDestination().id)
+        launchSingleTop = true
     }
 }
 
@@ -106,7 +119,7 @@ fun AppNavegacion(vm: BancoViewModel) {
         }
     ) { relleno ->
         if (pedirLogin) {
-            androidx.compose.foundation.layout.Box(Modifier.padding(relleno)) { LoginScreen(vm) }
+            Box(Modifier.padding(relleno)) { LoginScreen(vm) }
         } else NavHost(
             navController = nav,
             startDestination = Rutas.INICIO,
@@ -115,28 +128,51 @@ fun AppNavegacion(vm: BancoViewModel) {
             composable(Rutas.INICIO) {
                 DashboardScreen(
                     vm = vm,
-                    alNuevoAporte = { nav.navigate("${Rutas.APORTES}?nuevo=true") },
+                    alNuevoMovimiento = { tipo -> nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=$tipo") },
+                    alNuevoAporte = { nav.irAPestanaCon("${Rutas.BANCO}?pestana=0&nuevo=true") },
                     alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
-                    alRegistrarPago = { nav.irAPestana(Rutas.PRESTAMOS) },
-                    alRespaldo = { nav.irAPestana(Rutas.AJUSTES) },
+                    alRegistrarPago = { nav.irAPestanaCon("${Rutas.BANCO}?pestana=1&nuevo=false") },
                     alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
-                    alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) }
+                    alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) },
+                    alVerMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
+                    alAjustes = { nav.navigate(Rutas.AJUSTES) }
                 )
             }
             composable(
-                route = "${Rutas.APORTES}?nuevo={nuevo}",
+                route = "${Rutas.MOVIMIENTOS}?nuevo={nuevo}",
                 arguments = listOf(navArgument("nuevo") {
-                    type = NavType.BoolType
-                    defaultValue = false
+                    type = NavType.StringType
+                    defaultValue = ""
                 })
             ) { e ->
-                AportesScreen(vm = vm, abrirFormulario = e.arguments?.getBoolean("nuevo") ?: false)
-            }
-            composable(Rutas.PRESTAMOS) {
-                PrestamosScreen(
+                MovimientosScreen(
                     vm = vm,
-                    alNuevo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
-                    alAbrir = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
+                    nuevoInicial = e.arguments?.getString("nuevo").orEmpty(),
+                    alConfigurar = { nav.navigate(Rutas.CONFIG_FINANZAS) }
+                )
+            }
+            composable(Rutas.CALENDARIO) {
+                CalendarioScreen(vm = vm)
+            }
+            composable(
+                route = "${Rutas.BANCO}?pestana={pestana}&nuevo={nuevo}",
+                arguments = listOf(
+                    navArgument("pestana") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    },
+                    navArgument("nuevo") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }
+                )
+            ) { e ->
+                BancoScreen(
+                    vm = vm,
+                    pestanaInicial = e.arguments?.getInt("pestana") ?: 0,
+                    abrirAporte = e.arguments?.getBoolean("nuevo") ?: false,
+                    alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
                 )
             }
             composable(Rutas.DEUDAS) {
@@ -153,7 +189,14 @@ fun AppNavegacion(vm: BancoViewModel) {
                 )
             }
             composable(Rutas.AJUSTES) {
-                AjustesScreen(vm = vm)
+                AjustesScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alConfigFinanzas = { nav.navigate(Rutas.CONFIG_FINANZAS) }
+                )
+            }
+            composable(Rutas.CONFIG_FINANZAS) {
+                ConfiguracionFinanzasScreen(vm = vm, alVolver = { nav.popBackStack() })
             }
             composable(Rutas.NUEVO_PRESTAMO) {
                 NuevoPrestamoScreen(

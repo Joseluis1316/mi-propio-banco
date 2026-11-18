@@ -104,3 +104,54 @@ data class AbonoDeudaEntity(
     val fecha: Long,
     val monto: Long
 )
+
+/** Categoría de ingreso o gasto. tipo = "INGRESO" o "GASTO". presupuestoMensual = 0 si no tiene límite. */
+@Entity(tableName = "categorias")
+data class CategoriaEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nombre: String,
+    val tipo: String,
+    val icono: String,
+    val presupuestoMensual: Long = 0L
+)
+
+/** Medio de pago o cuenta: efectivo, transferencia, Nequi, tarjeta… */
+@Entity(tableName = "medios_pago")
+data class MedioPagoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nombre: String,
+    val icono: String
+)
+
+/** Ingreso o gasto registrado. plantillaId indica si vino de una plantilla fija. */
+@Entity(tableName = "movimientos", indices = [Index("fecha")])
+data class MovimientoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tipo: String,
+    val monto: Long,
+    val categoriaId: Long,
+    val medioId: Long,
+    val fecha: Long,
+    val nota: String = "",
+    val plantillaId: Long? = null
+)
+
+/**
+ * Plantilla fija (ingreso o gasto que se repite). La ocurrencia n cae en
+ * periodicidad.vencimiento(fechaInicio, n), con n = 0 en la fecha de inicio.
+ * ultimaOcurrencia = índice de la última registrada u omitida (-1 = ninguna).
+ */
+@Entity(tableName = "plantillas")
+data class PlantillaEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val nombre: String,
+    val tipo: String,
+    val monto: Long,
+    val categoriaId: Long,
+    val medioId: Long,
+    val periodicidad: String,
+    val fechaInicio: Long,
+    val automatica: Boolean,
+    val activa: Boolean = true,
+    val ultimaOcurrencia: Int = -1
+)

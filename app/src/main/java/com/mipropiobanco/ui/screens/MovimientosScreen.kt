@@ -1,0 +1,510 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+
+package com.mipropiobanco.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mipropiobanco.data.local.CategoriaEntity
+import com.mipropiobanco.data.local.MedioPagoEntity
+import com.mipropiobanco.data.local.MovimientoEntity
+import com.mipropiobanco.data.repository.DatosRepeticion
+import com.mipropiobanco.domain.AvancePresupuesto
+import com.mipropiobanco.domain.Ocurrencia
+import com.mipropiobanco.domain.Periodicidad
+import com.mipropiobanco.domain.Recurrencia
+import com.mipropiobanco.domain.ResumenMes
+import com.mipropiobanco.domain.TipoMovimiento
+import com.mipropiobanco.ui.BancoViewModel
+import com.mipropiobanco.ui.components.CampoMonto
+import com.mipropiobanco.ui.components.Encabezado
+import com.mipropiobanco.ui.components.EstadoVacio
+import com.mipropiobanco.ui.components.FilaResumen
+import com.mipropiobanco.ui.components.SelectorFecha
+import com.mipropiobanco.util.Formato
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+
+private val formatoMesTitulo = DateTimeFormatter.ofPattern("MMMM yyyy", Formato.localeCO)
+private val formatoDia = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", Formato.localeCO)
+
+fun YearMonth.titulo(): String = format(formatoMesTitulo).replaceFirstChar { it.uppercase() }
+
+@Composable
+fun SelectorMes(mes: YearMonth, alCambiar: (YearMonth) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        IconButton(onClick = { alCambiar(mes.minusMonths(1)) }) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Mes anterior")
+        }
+        Text(
+            mes.titulo(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .weight(1f)
+                .clickable { alCambiar(YearMonth.now()) },
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        IconButton(onClick = { alCambiar(mes.plusMonths(1)) }) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Mes siguiente")
+        }
+    }
+}
+
+private enum class FiltroMov(val etiqueta: String) { TODOS("Todos"), GASTOS("Gastos"), INGRESOS("Ingresos") }
+
+@Composable
+fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: () -> Unit) {
+    val movimientos by vm.movimientos.collectAsStateWithLifecycle()
+    val categorias by vm.categorias.collectAsStateWithLifecycle()
+    val medios by vm.medios.collectAsStateWithLifecycle()
+    val plantillas by vm.plantillas.collectAsStateWithLifecycle()
+
+    var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
+    val mes = YearMonth.parse(mesTexto)
+    var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
+    var nuevoTipo by rememberSaveable { mutableStateOf(nuevoInicial) }
+    var editando by remember { mutableStateOf<MovimientoEntity?>(null) }
+    var registrando by remember { mutableStateOf<Ocurrencia?>(null) }
+
+    val catMap = categorias.associateBy { it.id }
+    val medMap = medios.associateBy { it.id }
+    val resumen = ResumenMes.de(movimientos, mes)
+    val hoy = LocalDate.now()
+    val pendientes = plantillas.flatMap { Recurrencia.pendientes(it, hoy) }.sortedBy { it.fecha }
+    val avances = categorias
+        .filter { it.tipo == TipoMovimiento.GASTO.name }
+        .map { AvancePresupuesto(it, resumen.gastoPorCategoria[it.id] ?: 0L) }
+        .filter { it.limite > 0L || it.gastado > 0L }
+        .sortedByDescending { if (it.limite > 0L) it.fraccion else 0f }
+    val delMes = movimientos
+        .filter { YearMonth.from(Formato.aLocalDate(it.fecha)) == mes }
+        .filter {
+            when (filtro) {
+                FiltroMov.TODOS -> true
+                FiltroMov.GASTOS -> it.tipo == TipoMovimiento.GASTO.name
+                FiltroMov.INGRESOS -> it.tipo == TipoMovimiento.INGRESO.name
+            }
+        }
+    val porDia = delMes.groupBy { Formato.aLocalDate(it.fecha) }.toSortedMap(compareByDescending { it })
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Encabezado("Ingresos y gastos", acciones = {
+                IconButton(onClick = alConfigurar) {
+                    Icon(Icons.Filled.Tune, contentDescription = "Categorías, medios y plantillas")
+                }
+            })
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item { SelectorMes(mes) { mesTexto = it.toString() } }
+                item { TarjetaResumenMes(resumen, medMap) }
+
+                if (pendientes.isNotEmpty()) {
+                    item {
+                        Text("Fijos por registrar", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    items(pendientes.take(20), key = { "${it.plantilla.id}-${it.indice}" }) { o ->
+                        TarjetaPendiente(
+                            o = o,
+                            categoria = catMap[o.plantilla.categoriaId],
+                            alRegistrar = { registrando = o },
+                            alOmitir = { vm.omitirOcurrencia(o) }
+                        )
+                    }
+                }
+
+                if (avances.isNotEmpty()) {
+                    item {
+                        Text("Presupuesto por categoría", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    items(avances, key = { "p-${it.categoria.id}" }) { a -> FilaPresupuesto(a) }
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FiltroMov.entries.forEach { f ->
+                            FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text(f.etiqueta) })
+                        }
+                    }
+                }
+                if (porDia.isEmpty()) {
+                    item {
+                        EstadoVacio(
+                            "Sin movimientos este mes",
+                            "Toca «Movimiento» para registrar un gasto o un ingreso. Si se repite (arriendo, salario, " +
+                                "servicios), marca «Repetir» y se vuelve plantilla fija."
+                        )
+                    }
+                }
+                porDia.forEach { (dia, lista) ->
+                    item(key = "d-$dia") {
+                        val neto = lista.sumOf { if (it.tipo == TipoMovimiento.INGRESO.name) it.monto else -it.monto }
+                        Row(Modifier.padding(top = 6.dp)) {
+                            Text(
+                                dia.format(formatoDia).replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(Formato.cop(neto), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    items(lista, key = { "m-${it.id}" }) { m ->
+                        FilaMovimiento(m, catMap[m.categoriaId], medMap[m.medioId]) { editando = m }
+                    }
+                }
+            }
+        }
+        ExtendedFloatingActionButton(
+            onClick = { nuevoTipo = TipoMovimiento.GASTO.name },
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            text = { Text("Movimiento") },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        )
+    }
+
+    if (nuevoTipo.isNotEmpty() || editando != null) {
+        DialogoMovimiento(
+            existente = editando,
+            tipoInicial = TipoMovimiento.desde(editando?.tipo ?: nuevoTipo),
+            categorias = categorias,
+            medios = medios,
+            alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir ->
+                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId)
+            },
+            alEliminar = editando?.let { m -> { vm.eliminarMovimiento(m) } },
+            alCerrar = {
+                nuevoTipo = ""
+                editando = null
+            }
+        )
+    }
+    registrando?.let { o ->
+        DialogoRegistrarFijo(o, alConfirmar = { monto -> vm.registrarOcurrencia(o, monto) }, alCerrar = { registrando = null })
+    }
+}
+
+@Composable
+private fun TarjetaResumenMes(r: ResumenMes, medios: Map<Long, MedioPagoEntity>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            FilaResumen("Ingresos", Formato.cop(r.ingresos))
+            FilaResumen("Gastos", Formato.cop(r.gastos))
+            FilaResumen(if (r.balance >= 0L) "Te sobra" else "Te faltó", Formato.cop(r.balance), destacado = true)
+            if (r.ingresos > 0L) {
+                Text(
+                    "Gastaste el ${Formato.porcentaje(r.gastos * 100.0 / r.ingresos, 0)} de lo que ingresó",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            val porMedio = (r.gastoPorMedio.keys + r.ingresoPorMedio.keys).distinct()
+            if (porMedio.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Por medio de pago", style = MaterialTheme.typography.labelLarge)
+                porMedio.forEach { id ->
+                    val m = medios[id]
+                    val entra = r.ingresoPorMedio[id] ?: 0L
+                    val sale = r.gastoPorMedio[id] ?: 0L
+                    FilaResumen(
+                        "${m?.icono.orEmpty()} ${m?.nombre ?: "Otro"}",
+                        (if (entra > 0L) "+${Formato.cop(entra)} " else "") + (if (sale > 0L) "−${Formato.cop(sale)}" else "")
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TarjetaPendiente(o: Ocurrencia, categoria: CategoriaEntity?, alRegistrar: () -> Unit, alOmitir: () -> Unit) {
+    val esIngreso = o.plantilla.tipo == TipoMovimiento.INGRESO.name
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(categoria?.icono ?: "📌", style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(o.plantilla.nombre, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Tocaba el ${Formato.fecha(o.fecha)}", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    (if (esIngreso) "+" else "−") + Formato.cop(o.plantilla.monto),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = alOmitir) { Text("Omitir") }
+                FilledTonalButton(onClick = alRegistrar) { Text("Registrar") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilaPresupuesto(a: AvancePresupuesto) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${a.categoria.icono} ${a.categoria.nombre}", modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (a.limite > 0L) "${Formato.cop(a.gastado)} / ${Formato.cop(a.limite)}" else Formato.cop(a.gastado),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (a.excedido) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+        }
+        if (a.limite > 0L) {
+            LinearProgressIndicator(
+                progress = { a.fraccion.coerceIn(0f, 1f) },
+                color = if (a.excedido) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+            )
+            Text(
+                if (a.excedido) "Te pasaste por ${Formato.cop(-a.restante)}" else "Te quedan ${Formato.cop(a.restante)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (a.excedido) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilaMovimiento(m: MovimientoEntity, c: CategoriaEntity?, medio: MedioPagoEntity?, alTocar: () -> Unit) {
+    val esIngreso = m.tipo == TipoMovimiento.INGRESO.name
+    Card(onClick = alTocar, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(c?.icono ?: "📦", style = MaterialTheme.typography.titleLarge)
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(c?.nombre ?: "Sin categoría", fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOfNotNull(medio?.let { "${it.icono} ${it.nombre}" }, m.nota.ifBlank { null }, if (m.plantillaId != null) "🔁 fijo" else null)
+                        .joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                (if (esIngreso) "+" else "−") + Formato.cop(m.monto),
+                fontWeight = FontWeight.Bold,
+                color = if (esIngreso) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+fun SelectorCategoria(categorias: List<CategoriaEntity>, tipo: TipoMovimiento, seleccion: Long, alElegir: (Long) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        categorias.filter { it.tipo == tipo.name }.forEach { c ->
+            FilterChip(selected = seleccion == c.id, onClick = { alElegir(c.id) }, label = { Text("${c.icono} ${c.nombre}") })
+        }
+    }
+}
+
+@Composable
+fun SelectorMedio(medios: List<MedioPagoEntity>, seleccion: Long, alElegir: (Long) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        medios.forEach { m ->
+            FilterChip(selected = seleccion == m.id, onClick = { alElegir(m.id) }, label = { Text("${m.icono} ${m.nombre}") })
+        }
+    }
+}
+
+@Composable
+fun SelectorPeriodicidad(seleccion: Periodicidad, alElegir: (Periodicidad) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Periodicidad.entries.forEach { p ->
+            FilterChip(selected = seleccion == p, onClick = { alElegir(p) }, label = { Text("Cada ${p.singular}") })
+        }
+    }
+}
+
+@Composable
+private fun DialogoMovimiento(
+    existente: MovimientoEntity?,
+    tipoInicial: TipoMovimiento,
+    categorias: List<CategoriaEntity>,
+    medios: List<MedioPagoEntity>,
+    alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?) -> Unit,
+    alEliminar: (() -> Unit)?,
+    alCerrar: () -> Unit
+) {
+    var tipo by rememberSaveable { mutableStateOf(tipoInicial) }
+    var monto by rememberSaveable { mutableStateOf(existente?.monto?.toString().orEmpty()) }
+    var categoriaId by rememberSaveable { mutableStateOf(existente?.categoriaId ?: 0L) }
+    var medioId by rememberSaveable { mutableStateOf(existente?.medioId ?: (medios.firstOrNull()?.id ?: 0L)) }
+    var fecha by rememberSaveable { mutableStateOf(existente?.fecha ?: Formato.hoyMillis()) }
+    var nota by rememberSaveable { mutableStateOf(existente?.nota.orEmpty()) }
+    var repetir by rememberSaveable { mutableStateOf(false) }
+    var periodicidad by rememberSaveable { mutableStateOf(Periodicidad.MENSUAL) }
+    var automatica by rememberSaveable { mutableStateOf(true) }
+    var confirmarBorrar by remember { mutableStateOf(false) }
+
+    val montoV = monto.toLongOrNull() ?: 0L
+    val categoriaValida = categorias.any { it.id == categoriaId && it.tipo == tipo.name }
+    val valido = montoV > 0L && categoriaValida && medioId > 0L
+
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text(if (existente == null) "Nuevo movimiento" else "Editar movimiento") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TipoMovimiento.entries.forEach { t ->
+                        FilterChip(
+                            selected = tipo == t,
+                            onClick = { tipo = t },
+                            label = { Text(if (t == TipoMovimiento.GASTO) "− Gasto" else "+ Ingreso") }
+                        )
+                    }
+                }
+                CampoMonto(valor = monto, alCambiar = { monto = it }, etiqueta = "Monto")
+                Text("Categoría", style = MaterialTheme.typography.labelLarge)
+                SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                Text(if (tipo == TipoMovimiento.GASTO) "¿Cómo pagaste?" else "¿Cómo lo recibiste?", style = MaterialTheme.typography.labelLarge)
+                SelectorMedio(medios, medioId) { medioId = it }
+                SelectorFecha("Fecha", fecha, { fecha = it })
+                OutlinedTextField(
+                    value = nota,
+                    onValueChange = { nota = it.take(80) },
+                    label = { Text("Nota (opcional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (existente == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = repetir, onCheckedChange = { repetir = it })
+                        Text("Repetir: crear plantilla fija")
+                    }
+                    if (repetir) {
+                        SelectorPeriodicidad(periodicidad) { periodicidad = it }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Registrar automáticamente")
+                                Text(
+                                    if (automatica) "Se anota solo en cada fecha" else "Te lo recuerda para confirmar el monto",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Switch(checked = automatica, onCheckedChange = { automatica = it })
+                        }
+                    }
+                }
+                if (alEliminar != null) {
+                    TextButton(onClick = { confirmarBorrar = true }) {
+                        Text("Eliminar movimiento", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valido, onClick = {
+                alGuardar(tipo, montoV, categoriaId, medioId, fecha, nota, if (repetir) DatosRepeticion(periodicidad, automatica) else null)
+                alCerrar()
+            }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+
+    if (confirmarBorrar && alEliminar != null) {
+        DialogoConfirmar(
+            titulo = "¿Eliminar este movimiento?",
+            texto = "Se borrará ${Formato.cop(montoV)} del ${Formato.fecha(fecha)}.",
+            accion = "Eliminar",
+            alConfirmar = {
+                alEliminar()
+                alCerrar()
+            },
+            alCerrar = { confirmarBorrar = false }
+        )
+    }
+}
+
+@Composable
+private fun DialogoRegistrarFijo(o: Ocurrencia, alConfirmar: (Long) -> Unit, alCerrar: () -> Unit) {
+    var monto by rememberSaveable { mutableStateOf(o.plantilla.monto.toString()) }
+    val montoV = monto.toLongOrNull() ?: 0L
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("Registrar «${o.plantilla.nombre}»") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Fecha: ${Formato.fecha(o.fecha)}. Si el valor cambió este periodo (por ejemplo, un recibo de servicios), ajústalo.")
+                CampoMonto(valor = monto, alCambiar = { monto = it }, etiqueta = "Monto")
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = montoV > 0L, onClick = {
+                alConfirmar(montoV)
+                alCerrar()
+            }) { Text("Registrar") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+}
