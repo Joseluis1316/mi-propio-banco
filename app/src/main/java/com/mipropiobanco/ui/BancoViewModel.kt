@@ -212,7 +212,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         val medioBanco = medioCon("bancolombia") ?: medioCon("transferencia") ?: meds.firstOrNull()
         val medioTarjeta = when (m.tarjeta) {
             "credito" -> medioCon("credito")
-            "debito" -> medioCon("debito")
+            "debito" -> medioCon("bancolombia") ?: medioCon("debito")
             else -> null
         }
         var tipo = m.tipo
@@ -399,6 +399,15 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     fun ajustarSaldos(saldosHoy: Map<Long, Long>, comoMovimiento: Boolean) = ejecutar(
         accion = { finanzas.ajustarSaldos(saldosHoy, comoMovimiento) },
         mensaje = { "💰 Saldos actualizados" }
+    )
+
+    fun unirEnBancolombia() = ejecutar(
+        accion = { finanzas.unirEnBancolombia() },
+        mensaje = { u ->
+            "🔗 ${u.movidos} movimientos pasados a Bancolombia" +
+                (if (u.ajustesBorrados > 0) " · ${u.ajustesBorrados} ajustes anteriores borrados" else "") +
+                ". Ahora pon tu saldo real en ✏️ Ajustar."
+        }
     )
 
     fun eliminarMedio(m: MedioPagoEntity) = ejecutar(

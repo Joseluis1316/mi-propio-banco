@@ -109,6 +109,51 @@ class FinanzasRepository(private val db: BancoDatabase) {
         }
     }
 
+    /** Resultado de unir las cuentas: movimientos pasados a Bancolombia y ajustes de saldo borrados. */
+    data class Union(val movidos: Int, val ajustesBorrados: Int, val cuentas: List<String>)
+
+    /**
+     * Transferencia y Tarjeta débito son la misma cuenta de Bancolombia: todo pasa a un solo medio
+     * "Bancolombia". Se borran los ajustes de saldo hechos antes (quedaron mal por tener la plata repartida).
+     */
+    suspend fun unirEnBancolombia(): Union {
+        fun n(t: String) = com.mipropiobanco.domain.Interprete.normalizar(t)
+        val medios = medioDao.obtenerTodos()
+        val destinoId = medios.firstOrNull { n(it.nombre).contains("bancolombia") }?.id
+            ?: medioDao.insertar(MedioPagoEntity(nombre = "Bancolombia", icono = "🏦"))
+        val origenes = medios.filter {
+            it.id != destinoId && (n(it.nombre).contains("transferencia") ||
+                (n(it.nombre).contains("debito") && !n(it.nombre).contains("credito")))
+        }
+        val ids = origenes.map { it.id }.toSet()
+        var movidos = 0
+        var ajustes = 0
+        db.withTransaction {
+            movimientoDao.obtenerTodos().forEach { m ->
+                if (m.nota.startsWith("Ajuste:")) {
+                    movimientoDao.eliminar(m); ajustes++; return@forEach
+                }
+                val origen = if (m.medioId in ids) destinoId else m.medioId
+                val destino = m.medioDestinoId?.let { if (it in ids) destinoId else it }
+                if (origen == m.medioId && destino == m.medioDestinoId) return@forEach
+                movidos++
+                if (m.tipo == TipoMovimiento.TRASLADO.name && origen == destino) {
+                    movimientoDao.eliminar(m) // traslado entre la misma cuenta: no existe
+                } else {
+                    movimientoDao.actualizar(m.copy(medioId = origen, medioDestinoId = destino))
+                }
+            }
+            plantillaDao.obtenerTodas().filter { it.medioId in ids }
+                .forEach { plantillaDao.actualizar(it.copy(medioId = destinoId)) }
+            db.reglaCuentaDao().obtenerTodas().filter { it.medioDestinoId in ids }
+                .forEach { db.reglaCuentaDao().actualizar(it.copy(medioDestinoId = destinoId)) }
+            val destino = medioDao.obtenerTodos().first { it.id == destinoId }
+            medioDao.actualizar(destino.copy(saldoInicial = destino.saldoInicial + origenes.sumOf { it.saldoInicial }))
+            origenes.forEach { medioDao.actualizar(it.copy(saldoInicial = 0L)) }
+        }
+        return Union(movidos, ajustes, origenes.map { it.nombre })
+    }
+
     // ---------------- Reglas aprendidas de los correos ----------------
 
     suspend fun buscarRegla(patron: String): com.mipropiobanco.data.local.ReglaCuentaEntity? =

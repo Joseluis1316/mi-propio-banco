@@ -141,6 +141,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     if (ajustandoSaldos) {
         DialogoSaldos(
             medios = medios,
+            alUnir = { vm.unirEnBancolombia(); ajustandoSaldos = false },
             saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos),
             alCerrar = { ajustandoSaldos = false },
             alGuardar = { valores, comoMovimiento -> vm.ajustarSaldos(valores, comoMovimiento); ajustandoSaldos = false }
@@ -985,6 +986,7 @@ private fun FilaNomina(item: com.mipropiobanco.domain.ItemNomina, incluido: Bool
 @Composable
 private fun DialogoSaldos(
     medios: List<com.mipropiobanco.data.local.MedioPagoEntity>,
+    alUnir: () -> Unit,
     saldos: Map<Long, Long>,
     alCerrar: () -> Unit,
     alGuardar: (Map<Long, Long>, Boolean) -> Unit
@@ -992,7 +994,7 @@ private fun DialogoSaldos(
     var comoMovimiento by androidx.compose.runtime.remember { mutableStateOf(true) }
     val valores = androidx.compose.runtime.remember(medios) {
         androidx.compose.runtime.mutableStateMapOf<Long, String>().apply {
-            medios.forEach { m -> put(m.id, (saldos[m.id] ?: 0L).coerceAtLeast(0L).takeIf { it > 0L }?.toString() ?: "") }
+            medios.forEach { m -> put(m.id, "") }
         }
     }
     AlertDialog(
@@ -1003,10 +1005,36 @@ private fun DialogoSaldos(
                 Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                fun n(t: String) = com.mipropiobanco.domain.Interprete.normalizar(t)
+                val separadas = medios.count {
+                    val x = n(it.nombre)
+                    x.contains("transferencia") || x.contains("bancolombia") || (x.contains("debito") && !x.contains("credito"))
+                } >= 2
+                if (separadas) {
+                    androidx.compose.material3.Card(
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "¿Transferencia y Tarjeta débito son tu misma cuenta Bancolombia? Únelas para que la plata no salga repartida. También se borran los ajustes de saldo anteriores.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            FilledTonalButton(onClick = alUnir) { Text("🔗 Unir en Bancolombia") }
+                        }
+                    }
+                }
                 Text(
-                    "Escribe lo que hay hoy en cada cuenta y en efectivo. Deja vacío lo que no uses.",
+                    "Escribe lo que hay HOY solo en las cuentas que quieras corregir. Las que dejes vacías no se tocan.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                medios.filter { (saldos[it.id] ?: 0L) != 0L }.takeIf { it.isNotEmpty() }?.let { conSaldo ->
+                    Text(
+                        "La app calcula hoy: " + conSaldo.joinToString(" · ") { "${it.icono} ${it.nombre} ${com.mipropiobanco.util.Formato.cop(saldos[it.id] ?: 0L)}" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Checkbox(checked = comoMovimiento, onCheckedChange = { comoMovimiento = it })
                     Text(
@@ -1026,7 +1054,13 @@ private fun DialogoSaldos(
         },
         confirmButton = {
             FilledTonalButton(onClick = {
-                alGuardar(medios.associate { m -> m.id to ((valores[m.id] ?: "").toLongOrNull() ?: 0L) }, comoMovimiento)
+                alGuardar(
+                    medios.mapNotNull { m ->
+                        val v = valores[m.id] ?: ""
+                        if (v.isBlank()) null else m.id to (v.toLongOrNull() ?: 0L)
+                    }.toMap(),
+                    comoMovimiento
+                )
             }) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
