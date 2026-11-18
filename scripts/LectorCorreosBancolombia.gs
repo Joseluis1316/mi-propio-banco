@@ -35,12 +35,21 @@ function revisarCorreos() {
   });
 }
 
+/** Quita logos y enlaces ([http://...]) para que llegue solo el texto de la alerta. */
+function limpiar(texto) {
+  return String(texto)
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function enviar(id, texto, fecha) {
   const url = 'https://firestore.googleapis.com/v1/projects/' + PROYECTO +
     '/databases/(default)/documents/usuarios/' + UID + '/bandeja/' + id;
   const cuerpo = {
     fields: {
-      texto: { stringValue: String(texto).substring(0, 4000) },
+      texto: { stringValue: limpiar(texto).substring(0, 4000) },
       fecha: { integerValue: String(fecha.getTime()) },
       origen: { stringValue: 'gmail' }
     }

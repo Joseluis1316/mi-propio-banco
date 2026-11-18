@@ -53,12 +53,27 @@ object InterpreteCorreo {
     private fun limpiar(nombre: String): String =
         nombre.trim().trimEnd('.', ',').replace(Regex("\\s+"), " ")
 
-    /** Toma solo la frase de la alerta ("Bancolombia: ...") del cuerpo del correo. */
+    private val VERBOS = Regex(
+        "(recibiste|retiraste|compraste|pagaste|transferiste|enviaste|realizaste)",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * Toma solo la frase de la alerta del cuerpo del correo. El texto plano de Gmail trae
+     * primero los logos como [http://...]: se quitan los enlaces y se arranca en el verbo.
+     */
     private fun frase(cuerpo: String): String {
-        val plano = cuerpo.replace(Regex("\\s+"), " ")
-        val i = plano.indexOf("Bancolombia:", ignoreCase = true)
-        val desde = if (i >= 0) plano.substring(i) else plano
-        val fin = Regex("(\\?Dudas|¿Dudas|Si tienes dudas|Llamanos|Llámanos|hablemos)", RegexOption.IGNORE_CASE).find(desde)
+        val plano = cuerpo
+            .replace(Regex("\\[[^\\]]*\\]"), " ")
+            .replace(Regex("<[^>]*>"), " ")
+            .replace(Regex("https?://\\S+"), " ")
+            .replace('\u00A0', ' ')
+            .replace(Regex("\\s+"), " ")
+        val inicio = VERBOS.find(plano)?.range?.first
+            ?: plano.indexOf("Bancolombia:", ignoreCase = true).takeIf { it >= 0 }
+            ?: 0
+        val desde = plano.substring(inicio)
+        val fin = Regex("(\\?Dudas|¿Dudas|Si tienes dudas|Llamanos|Llámanos|hablemos|Si no reconoces)", RegexOption.IGNORE_CASE).find(desde)
         return (if (fin != null) desde.substring(0, fin.range.first) else desde).take(400).trim()
     }
 
