@@ -1,6 +1,20 @@
 # Mi Propio Banco (Android · Kotlin · Jetpack Compose · Room)
 
-App 100% offline para administrar tu fondo de autofinanciamiento: aportes, autopréstamos con cuota fija (sistema francés), pagos y autointereses. No pide permiso de internet: los datos solo existen en tu teléfono.
+App 100% offline para administrar tu fondo de autofinanciamiento y salir de deudas. No pide permiso de internet: los datos solo existen en tu teléfono.
+
+## Funciones
+
+- **Bóveda y aportes:** capital total, disponible, prestado y autointereses ganados.
+- **Autopréstamos:** tipos de préstamo con tasas editables (por defecto, la tasa de usura vigente de la Superfinanciera), cuotas diarias, semanales, quincenales, mensuales o anuales, cuota fija (sistema francés) y tabla con fechas de vencimiento.
+- **Cronómetro y mora:** cuenta regresiva hasta cada vencimiento; si pagas tarde se cobra interés de mora por día de atraso, que también entra a la bóveda.
+- **Deudas con terceros (bola de nieve):** orden de ataque de menor a mayor saldo, pago mínimo en las demás y excedente al objetivo; cuando liquidas una, su pago se suma a la siguiente. Muestra cuánto pagar este mes, cuándo quedas libre y el cronómetro de cada fecha de pago.
+- **Respaldo:** exportar/importar JSON y exportar CSV.
+
+## Actualización automática
+
+Cada `git push` a `main` compila la app en GitHub Actions y publica una versión en *Releases* con `MiPropioBanco.apk`. Todas las versiones se firman con la misma llave (`app/keystore`), así que se instalan encima de la anterior sin perder datos.
+
+Para que el celular se actualice solo, instala **Obtainium** (github.com/ImranR98/Obtainium/releases), toca *Add App*, pega la URL de este repositorio y pulsa *Install*. Obtainium revisa las nuevas versiones y te avisa o las instala.
 
 ## Estructura del proyecto
 
@@ -22,13 +36,14 @@ MiPropioBanco/
             ├── MiPropioBancoApp.kt          # Contenedor de dependencias
             ├── MainActivity.kt              # Tema claro/oscuro + navegación
             ├── data/
-            │   ├── local/Entidades.kt       # Aporte, Préstamo, Pago (Room)
+            │   ├── local/Entidades.kt       # Aporte, TipoPréstamo, Préstamo, Pago, Deuda, Abono (Room)
             │   ├── local/Daos.kt
             │   ├── local/BancoDatabase.kt
             │   ├── repository/BancoRepository.kt   # Reglas de negocio y validaciones
             │   ├── backup/BackupManager.kt  # Exportar/importar JSON, exportar CSV
             │   └── prefs/AjustesPreferencias.kt    # Modo de tema
-            ├── domain/Modelos.kt            # Amortización francesa y resumen del banco
+            ├── domain/Modelos.kt            # Periodicidad, tasas, mora, amortización y resumen
+            ├── domain/BolaDeNieve.kt        # Plan de pago de deudas (bola de nieve)
             ├── util/Formato.kt              # $ COP sin decimales, fechas, tasas
             └── ui/
                 ├── BancoViewModel.kt
@@ -40,8 +55,10 @@ MiPropioBanco/
                     ├── AportesScreen.kt
                     ├── PrestamosScreen.kt
                     ├── NuevoPrestamoScreen.kt   # Simulador + aprobación
-                    ├── DetallePrestamoScreen.kt # Pagos y tabla
-                    └── AjustesScreen.kt         # Tema, respaldo, reglamento
+                    ├── DetallePrestamoScreen.kt # Pagos, mora y tabla
+                    ├── DeudasScreen.kt          # Bola de nieve
+                    ├── DetalleDeudaScreen.kt    # Pagos a cada deuda
+                    └── AjustesScreen.kt         # Tema, tipos/tasas, respaldo, reglamento
 ```
 
 ## Cómo funcionan los saldos

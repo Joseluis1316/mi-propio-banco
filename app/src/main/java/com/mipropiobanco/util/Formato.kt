@@ -21,32 +21,52 @@ object Formato {
         decimalSeparator = ','
     }
     private val formatoMiles = DecimalFormat("#,##0", simbolos)
-    private val formatoTasa = DecimalFormat("0.##", simbolos)
+    private val formatoDecimal = DecimalFormat("0.####", simbolos)
     private val formatoFecha = DateTimeFormatter.ofPattern("dd MMM yyyy", localeCO)
 
     fun miles(valor: Long): String = synchronized(formatoMiles) { formatoMiles.format(valor) }
 
-    /** $ 1.234.567 → "$1.234.567"; negativos → "-$1.234.567". */
+    /** 1234567 → "$1.234.567"; negativos → "-$1.234.567". */
     fun cop(valor: Long): String =
         if (valor < 0L) "-$" + miles(-valor) else "$" + miles(valor)
 
+    /** 28.34 → "28,34" (para precargar campos editables). */
+    fun decimal(valor: Double): String = synchronized(formatoDecimal) { formatoDecimal.format(valor) }
+
     /** 1.5 → "1,5%" */
-    fun tasa(valor: Double): String = synchronized(formatoTasa) { formatoTasa.format(valor) } + "%"
+    fun tasa(valor: Double): String = decimal(Math.round(valor * 10000.0) / 10000.0) + "%"
 
     fun porcentaje(valor: Double, decimales: Int = 2): String =
         String.format(localeCO, "%.${decimales}f%%", valor)
 
-    fun fecha(millis: Long): String =
-        Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().format(formatoFecha)
+    fun aLocalDate(millis: Long): LocalDate = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
 
-    fun fechaIso(millis: Long): String =
-        Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
+    fun aMillis(fecha: LocalDate): Long = fecha.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
-    fun hoyMillis(): Long =
-        LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    fun fecha(millis: Long): String = aLocalDate(millis).format(formatoFecha)
+
+    fun fecha(fecha: LocalDate): String = fecha.format(formatoFecha)
+
+    fun fechaIso(millis: Long): String = aLocalDate(millis).toString()
+
+    fun hoyMillis(): Long = aMillis(LocalDate.now())
 
     fun hoyIso(): String = LocalDate.now().toString()
 
+    /** 273_600_000 ms → "3d 04:00:00" */
+    fun duracion(ms: Long): String {
+        val s = (if (ms < 0L) -ms else ms) / 1000L
+        val dias = s / 86_400L
+        val horas = (s % 86_400L) / 3_600L
+        val minutos = (s % 3_600L) / 60L
+        val segundos = s % 60L
+        return if (dias > 0L) {
+            String.format(localeCO, "%dd %02d:%02d:%02d", dias, horas, minutos, segundos)
+        } else {
+            String.format(localeCO, "%02d:%02d:%02d", horas, minutos, segundos)
+        }
+    }
+
     /** Acepta "1,5" o "1.5". */
-    fun parsearTasa(texto: String): Double? = texto.trim().replace(',', '.').toDoubleOrNull()
+    fun parsearDecimal(texto: String): Double? = texto.trim().replace(',', '.').toDoubleOrNull()
 }

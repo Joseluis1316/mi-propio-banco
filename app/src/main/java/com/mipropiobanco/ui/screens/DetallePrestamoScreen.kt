@@ -35,13 +35,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mipropiobanco.domain.Amortizacion
+import com.mipropiobanco.domain.PrestamoConPagos
+import com.mipropiobanco.domain.Tasas
 import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.components.BarraProgreso
+import com.mipropiobanco.ui.components.CronometroPrestamo
 import com.mipropiobanco.ui.components.Encabezado
 import com.mipropiobanco.ui.components.EncabezadoTabla
 import com.mipropiobanco.ui.components.FilaResumen
 import com.mipropiobanco.ui.components.FilaTabla
+import com.mipropiobanco.ui.components.SelectorFecha
+import com.mipropiobanco.ui.components.rememberAhora
 import com.mipropiobanco.util.Formato
 
 private enum class Confirmacion { PAGAR, DESHACER, ANULAR }
@@ -61,20 +65,16 @@ fun DetallePrestamoScreen(vm: BancoViewModel, prestamoId: Long, alVolver: () -> 
         return
     }
 
+    val ahora = rememberAhora()
     val p = item.prestamo
-    val tabla = remember(p.monto, p.plazoMeses, p.tasaMensual) {
-        Amortizacion.tabla(p.monto, p.plazoMeses, p.tasaMensual)
-    }
+    val per = item.periodicidad
     val pagosPorCuota = item.pagos.associateBy { it.numeroCuota }
-    val siguiente = if (p.pagado) null else tabla.getOrNull(item.cuotasPagadas)
+    val siguiente = item.proximaCuota
     var confirmacion by remember { mutableStateOf<Confirmacion?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         Encabezado(p.concepto, alVolver = alVolver)
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(16.dp)
-        ) {
+        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp)) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -95,24 +95,31 @@ fun DetallePrestamoScreen(vm: BancoViewModel, prestamoId: Long, alVolver: () -> 
                         )
                         BarraProgreso(item.progreso)
                         Text(
-                            "${item.cuotasPagadas} de ${p.plazoMeses} cuotas · " +
+                            "${item.cuotasPagadas} de ${per.cantidad(p.plazo)} · " +
                                 "${Formato.porcentaje(item.progreso * 100.0, 0)} del capital recuperado",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
+                CronometroPrestamo(item, ahora)
+                Spacer(Modifier.height(8.dp))
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
+                        FilaResumen("Tipo", p.tipo)
                         FilaResumen("Monto prestado", Formato.cop(p.monto))
-                        FilaResumen(
-                            "Tasa",
-                            "${Formato.tasa(p.tasaMensual)} mes (${Formato.porcentaje(Amortizacion.tasaEfectivaAnual(p.tasaMensual))} E.A.)"
-                        )
-                        FilaResumen("Cuota fija", Formato.cop(p.cuota))
+                        FilaResumen("Tasa", "${Formato.tasa(p.tasaEA)} E.A. (${Formato.tasa(p.tasaPeriodo)} por ${per.singular})")
+                        FilaResumen("Tasa de mora", "${Formato.tasa(p.tasaMoraEA)} E.A. por día de atraso")
+                        FilaResumen("Cuota fija", "${Formato.cop(p.cuota)} cada ${per.singular}")
                         FilaResumen("Desembolsado", Formato.fecha(p.fechaCreacion))
                         FilaResumen("Capital recuperado", Formato.cop(item.capitalPagado))
-                        FilaResumen("Autointereses ganados", Formato.cop(item.interesesPagados), destacado = true)
+                        FilaResumen("Intereses cobrados", Formato.cop(item.interesesPagados))
+                        if (item.moraPagada > 0L) FilaResumen("Mora cobrada", Formato.cop(item.moraPagada))
+                        FilaResumen(
+                            "Autointereses ganados",
+                            Formato.cop(item.interesesPagados + item.moraPagada),
+                            destacado = true
+                        )
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -125,60 +132,43 @@ fun DetallePrestamoScreen(vm: BancoViewModel, prestamoId: Long, alVolver: () -> 
                             .height(52.dp)
                     ) {
                         Icon(Icons.Filled.Payments, contentDescription = null)
-                        Text("  Pagar cuota ${siguiente.numero} · ${Formato.cop(siguiente.cuota)}")
+                        Text("  Pagar cuota ${siguiente.numero}")
                     }
                     Spacer(Modifier.height(8.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (item.pagos.isNotEmpty()) {
-                        OutlinedButton(
-                            onClick = { confirmacion = Confirmacion.DESHACER },
-                            modifier = Modifier.weight(1f)
-                        ) {
+                        OutlinedButton(onClick = { confirmacion = Confirmacion.DESHACER }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null)
                             Text(" Deshacer pago")
                         }
                     } else {
-                        OutlinedButton(
-                            onClick = { confirmacion = Confirmacion.ANULAR },
-                            modifier = Modifier.weight(1f)
-                        ) {
+                        OutlinedButton(onClick = { confirmacion = Confirmacion.ANULAR }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.Cancel, contentDescription = null)
                             Text(" Anular préstamo")
                         }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    "Tabla de amortización (pesos)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("Tabla de amortización (pesos)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 EncabezadoTabla()
             }
-            items(tabla, key = { it.numero }) { fila ->
-                val pago = pagosPorCuota[fila.numero]
-                FilaTabla(fila, pagada = pago != null, fechaPago = pago?.let { Formato.fecha(it.fecha) })
+            items(item.tabla, key = { it.numero }) { fila ->
+                FilaTabla(fila, vence = item.vencimiento(fila.numero), pago = pagosPorCuota[fila.numero])
             }
         }
     }
 
     when (confirmacion) {
-        Confirmacion.PAGAR -> siguiente?.let { fila ->
-            DialogoConfirmar(
-                titulo = "Registrar pago de la cuota ${fila.numero}",
-                texto = "Cuota: ${Formato.cop(fila.cuota)}\n\n" +
-                    "• ${Formato.cop(fila.capital)} de capital regresan a la bóveda.\n" +
-                    "• ${Formato.cop(fila.interes)} de interés se suman a la bóveda y a tus autointereses ganados.",
-                accion = "Registrar pago",
-                alConfirmar = { vm.pagarCuota(p.id) },
-                alCerrar = { confirmacion = null }
-            )
-        }
+        Confirmacion.PAGAR -> DialogoPagoCuota(
+            item = item,
+            alConfirmar = { fecha -> vm.pagarCuota(p.id, fecha) },
+            alCerrar = { confirmacion = null }
+        )
         Confirmacion.DESHACER -> DialogoConfirmar(
             titulo = "¿Deshacer el último pago?",
-            texto = "Úsalo solo si registraste una cuota por error. El dinero de esa cuota sale de nuevo de la bóveda.",
+            texto = "Úsalo solo si registraste una cuota por error. El dinero de esa cuota (incluida la mora) sale de nuevo de la bóveda.",
             accion = "Deshacer",
             alConfirmar = { vm.deshacerUltimoPago(p.id) },
             alCerrar = { confirmacion = null }
@@ -194,8 +184,47 @@ fun DetallePrestamoScreen(vm: BancoViewModel, prestamoId: Long, alVolver: () -> 
     }
 }
 
+/** Pago de cuota con fecha editable: si es posterior al vencimiento, calcula la mora por día. */
 @Composable
-private fun DialogoConfirmar(
+private fun DialogoPagoCuota(item: PrestamoConPagos, alConfirmar: (Long) -> Unit, alCerrar: () -> Unit) {
+    val fila = item.proximaCuota ?: return
+    var fechaPago by remember { mutableStateOf(Formato.hoyMillis()) }
+    val vence = item.vencimiento(fila.numero)
+    val dias = Tasas.diasAtraso(vence, Formato.aLocalDate(fechaPago))
+    val mora = Tasas.mora(fila.cuota, item.prestamo.tasaMoraEA, dias)
+
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("Pagar cuota ${fila.numero}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilaResumen("Vence", Formato.fecha(vence))
+                SelectorFecha("Fecha de pago", fechaPago, { fechaPago = it })
+                FilaResumen("Capital → bóveda", Formato.cop(fila.capital))
+                FilaResumen("Interés → bóveda", Formato.cop(fila.interes))
+                if (dias > 0L) {
+                    Text(
+                        "Pago con $dias ${if (dias == 1L) "día" else "días"} de atraso",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    FilaResumen("Interés de mora → bóveda", Formato.cop(mora))
+                }
+                FilaResumen("Total a pagar", Formato.cop(fila.cuota + mora), destacado = true)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                alConfirmar(fechaPago)
+                alCerrar()
+            }) { Text("Registrar pago") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+fun DialogoConfirmar(
     titulo: String,
     texto: String,
     accion: String,

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.mipropiobanco.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +42,9 @@ import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.components.EstadoVacio
 import com.mipropiobanco.ui.components.TarjetaDato
 import com.mipropiobanco.ui.components.TarjetaPrestamo
+import com.mipropiobanco.ui.components.Cronometro
+import com.mipropiobanco.ui.components.rememberAhora
+import androidx.compose.material.icons.filled.CreditCard
 import com.mipropiobanco.util.Formato
 
 @Composable
@@ -49,11 +54,14 @@ fun DashboardScreen(
     alNuevoPrestamo: () -> Unit,
     alRegistrarPago: () -> Unit,
     alRespaldo: () -> Unit,
-    alAbrirPrestamo: (Long) -> Unit
+    alAbrirPrestamo: (Long) -> Unit,
+    alVerDeudas: () -> Unit
 ) {
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
     val activos = prestamos.filter { !it.prestamo.pagado }
+    val plan by vm.planDeudas.collectAsStateWithLifecycle()
+    val ahora = rememberAhora()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -99,7 +107,8 @@ fun DashboardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contenedor = MaterialTheme.colorScheme.tertiaryContainer,
                 contenido = MaterialTheme.colorScheme.onTertiaryContainer,
-                estiloValor = MaterialTheme.typography.headlineSmall
+                estiloValor = MaterialTheme.typography.headlineSmall,
+                detalle = if (resumen.moraCobrada > 0L) "Incluye ${Formato.cop(resumen.moraCobrada)} de mora" else null
             )
         }
         item {
@@ -129,7 +138,45 @@ fun DashboardScreen(
             }
         } else {
             items(activos, key = { it.prestamo.id }) { item ->
-                TarjetaPrestamo(item = item, alAbrir = { alAbrirPrestamo(item.prestamo.id) })
+                TarjetaPrestamo(item = item, ahora = ahora, alAbrir = { alAbrirPrestamo(item.prestamo.id) })
+            }
+        }
+        val objetivo = plan.orden.firstOrNull()
+        if (objetivo != null) {
+            item {
+                Text("Deudas con terceros", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            item {
+                Card(onClick = alVerDeudas, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.CreditCard, contentDescription = null)
+                            Text(
+                                "  Debes ${Formato.cop(plan.orden.sumOf { it.saldo })} en ${plan.orden.size} deudas",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Text(
+                            "Objetivo bola de nieve: ${objetivo.deuda.acreedor} (${Formato.cop(objetivo.saldo)})",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        plan.mesesTotales?.let {
+                            Text("Libre de deudas en $it meses con tu plan", style = MaterialTheme.typography.bodySmall)
+                        }
+                        val proxima = plan.orden.mapNotNull { d -> d.estado(ahora)?.let { d to it } }
+                            .minByOrNull { it.second.restanteMs }
+                        if (proxima != null) {
+                            val (d, e) = proxima
+                            Cronometro(
+                                titulo = if (e.atrasado) "${d.deuda.acreedor}: atrasado ${e.diasAtraso} días"
+                                else "Próximo pago: ${d.deuda.acreedor} · ${Formato.fecha(e.vence)}",
+                                detalle = if (e.atrasado) "Págalo cuanto antes" else "Faltan ${Formato.duracion(e.restanteMs)}",
+                                atrasado = e.atrasado
+                            )
+                        }
+                    }
+                }
             }
         }
     }

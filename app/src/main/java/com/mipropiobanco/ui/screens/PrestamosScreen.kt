@@ -31,12 +31,14 @@ import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.components.Encabezado
 import com.mipropiobanco.ui.components.EstadoVacio
 import com.mipropiobanco.ui.components.TarjetaPrestamo
+import com.mipropiobanco.ui.components.rememberAhora
 
 private enum class FiltroPrestamos(val etiqueta: String) { ACTIVOS("Activos"), PAGADOS("Pagados"), TODOS("Todos") }
 
 @Composable
 fun PrestamosScreen(vm: BancoViewModel, alNuevo: () -> Unit, alAbrir: (Long) -> Unit) {
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
+    val ahora = rememberAhora()
     var filtro by rememberSaveable { mutableStateOf(FiltroPrestamos.ACTIVOS) }
     val visibles = when (filtro) {
         FiltroPrestamos.ACTIVOS -> prestamos.filter { !it.prestamo.pagado }
@@ -73,7 +75,7 @@ fun PrestamosScreen(vm: BancoViewModel, alNuevo: () -> Unit, alAbrir: (Long) -> 
                     }
                 }
                 items(visibles, key = { it.prestamo.id }) { item ->
-                    TarjetaPrestamo(item = item, alAbrir = { alAbrir(item.prestamo.id) })
+                    TarjetaPrestamo(item = item, ahora = ahora, alAbrir = { alAbrir(item.prestamo.id) })
                 }
             }
         }

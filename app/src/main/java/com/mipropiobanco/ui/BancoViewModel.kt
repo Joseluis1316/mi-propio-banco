@@ -5,8 +5,14 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mipropiobanco.MiPropioBancoApp
+import com.mipropiobanco.data.local.AbonoDeudaEntity
 import com.mipropiobanco.data.local.AporteEntity
+import com.mipropiobanco.data.local.TipoPrestamoEntity
 import com.mipropiobanco.data.prefs.ModoTema
+import com.mipropiobanco.domain.BolaDeNieve
+import com.mipropiobanco.domain.DeudaConAbonos
+import com.mipropiobanco.domain.Periodicidad
+import com.mipropiobanco.domain.PlanBolaNieve
 import com.mipropiobanco.domain.PrestamoConPagos
 import com.mipropiobanco.domain.ResumenBanco
 import com.mipropiobanco.util.Formato
@@ -17,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,8 +41,20 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     val aportes: StateFlow<List<AporteEntity>> =
         repo.aportes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val tipos: StateFlow<List<TipoPrestamoEntity>> =
+        repo.tipos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val prestamos: StateFlow<List<PrestamoConPagos>> =
         repo.prestamosConPagos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val deudas: StateFlow<List<DeudaConAbonos>> =
+        repo.deudas.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val presupuestoDeudas: StateFlow<Long> = preferencias.presupuestoDeudas
+
+    val planDeudas: StateFlow<PlanBolaNieve> =
+        combine(repo.deudas, preferencias.presupuestoDeudas) { d, p -> BolaDeNieve.planificar(d, p) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BolaDeNieve.planificar(emptyList(), 0L))
 
     val modoTema: StateFlow<ModoTema> = preferencias.modoTema
 
@@ -60,6 +79,8 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         }
     }
 
+    // ---------- Aportes ----------
+
     fun registrarAporte(fecha: Long, concepto: String, monto: Long) = ejecutar(
         accion = { repo.registrarAporte(fecha, concepto, monto) },
         mensaje = { "Aporte de ${Formato.cop(monto)} guardado en la bóveda" }
@@ -70,26 +91,45 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "Aporte eliminado" }
     )
 
+    // ---------- Tipos de préstamo ----------
+
+    fun guardarTipo(id: Long?, nombre: String, tasaEA: Double, tasaMoraEA: Double) = ejecutar(
+        accion = { repo.guardarTipo(id, nombre, tasaEA, tasaMoraEA) },
+        mensaje = { "Tipo de préstamo guardado" }
+    )
+
+    fun eliminarTipo(tipo: TipoPrestamoEntity) = ejecutar(
+        accion = { repo.eliminarTipo(tipo) },
+        mensaje = { "Tipo «${tipo.nombre}» eliminado" }
+    )
+
+    // ---------- Autopréstamos ----------
+
     fun crearPrestamo(
         concepto: String,
         monto: Long,
-        plazoMeses: Int,
-        tasaMensual: Double,
+        cuotas: Int,
+        periodicidad: Periodicidad,
+        tipo: String,
+        tasaEA: Double,
+        tasaMoraEA: Double,
+        fechaDesembolso: Long,
         alCrear: (Long) -> Unit
     ) = ejecutar(
-        accion = { repo.crearPrestamo(concepto, monto, plazoMeses, tasaMensual) },
+        accion = { repo.crearPrestamo(concepto, monto, cuotas, periodicidad, tipo, tasaEA, tasaMoraEA, fechaDesembolso) },
         mensaje = { "Autopréstamo aprobado: salieron ${Formato.cop(monto)} de la bóveda" },
         alTerminar = alCrear
     )
 
-    fun pagarCuota(prestamoId: Long) = ejecutar(
-        accion = { repo.registrarPagoCuota(prestamoId) },
+    fun pagarCuota(prestamoId: Long, fechaPago: Long) = ejecutar(
+        accion = { repo.registrarPagoCuota(prestamoId, fechaPago) },
         mensaje = { r ->
+            val mora = if (r.pago.mora > 0L) " + mora ${Formato.cop(r.pago.mora)} (${r.pago.diasAtraso} días)" else ""
             if (r.prestamoLiquidado) {
-                "¡Préstamo pagado por completo! Cuota ${r.pago.numeroCuota} registrada"
+                "¡Préstamo pagado por completo! Cuota ${r.pago.numeroCuota} registrada$mora"
             } else {
-                "Cuota ${r.pago.numeroCuota}: ${Formato.cop(r.pago.capital)} de capital y " +
-                    "${Formato.cop(r.pago.interes)} de interés volvieron a la bóveda"
+                "Cuota ${r.pago.numeroCuota}: ${Formato.cop(r.pago.capital)} capital + " +
+                    "${Formato.cop(r.pago.interes)} interés$mora a la bóveda"
             }
         }
     )
@@ -104,6 +144,45 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "Préstamo anulado: el dinero regresó a la bóveda" },
         alTerminar = { alAnular() }
     )
+
+    // ---------- Deudas ----------
+
+    fun cambiarPresupuestoDeudas(valor: Long) = preferencias.cambiarPresupuestoDeudas(valor)
+
+    fun guardarDeuda(
+        id: Long?,
+        acreedor: String,
+        saldo: Long,
+        pagoMinimo: Long,
+        tasaEA: Double,
+        diaPago: Int,
+        alGuardar: () -> Unit = {}
+    ) = ejecutar(
+        accion = { repo.guardarDeuda(id, acreedor, saldo, pagoMinimo, tasaEA, diaPago) },
+        mensaje = { if (id == null) "Deuda con $acreedor agregada" else "Deuda actualizada" },
+        alTerminar = { alGuardar() }
+    )
+
+    fun eliminarDeuda(deudaId: Long, alEliminar: () -> Unit) = ejecutar(
+        accion = { repo.eliminarDeuda(deudaId) },
+        mensaje = { "Deuda eliminada" },
+        alTerminar = { alEliminar() }
+    )
+
+    fun abonarDeuda(deudaId: Long, monto: Long, fecha: Long) = ejecutar(
+        accion = { repo.abonarDeuda(deudaId, monto, fecha) },
+        mensaje = { saldo ->
+            if (saldo == 0L) "¡Deuda liquidada! Su pago ahora se suma a la siguiente (bola de nieve)"
+            else "Pago registrado. Saldo pendiente: ${Formato.cop(saldo)}"
+        }
+    )
+
+    fun eliminarAbono(abono: AbonoDeudaEntity) = ejecutar(
+        accion = { repo.eliminarAbono(abono) },
+        mensaje = { "Pago eliminado" }
+    )
+
+    // ---------- Ajustes y respaldo ----------
 
     fun cambiarModoTema(modo: ModoTema) = preferencias.cambiarModoTema(modo)
 

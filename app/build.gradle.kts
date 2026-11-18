@@ -13,11 +13,27 @@ android {
         applicationId = "com.mipropiobanco"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // En GitHub Actions cada compilación sube la versión, así el celular acepta la actualización.
+        val numeroCompilacion = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionCode = numeroCompilacion
+        versionName = "2.0.$numeroCompilacion"
+    }
+
+    // Firma fija: todas las versiones se firman con la misma llave para que se instalen
+    // encima de la anterior sin borrar tus datos. (App de uso personal; no se publica en Play Store.)
+    signingConfigs {
+        create("fija") {
+            storeFile = file("keystore/mipropiobanco.jks")
+            storePassword = "mipropiobanco"
+            keyAlias = "mipropiobanco"
+            keyPassword = "mipropiobanco"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fija")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -25,8 +41,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Uso personal: se firma con la llave de depuración para poder instalarlo directo.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("fija")
         }
     }
 

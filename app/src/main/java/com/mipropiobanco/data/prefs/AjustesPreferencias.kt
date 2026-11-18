@@ -17,6 +17,10 @@ class AjustesPreferencias(context: Context) {
     private val _modoTema = MutableStateFlow(leerModo())
     val modoTema: StateFlow<ModoTema> = _modoTema.asStateFlow()
 
+    /** Cuánto puedes destinar cada mes a pagar deudas (plan bola de nieve). */
+    private val _presupuestoDeudas = MutableStateFlow(prefs.getLong(CLAVE_PRESUPUESTO, 0L))
+    val presupuestoDeudas: StateFlow<Long> = _presupuestoDeudas.asStateFlow()
+
     private fun leerModo(): ModoTema =
         runCatching { ModoTema.valueOf(prefs.getString(CLAVE_TEMA, null) ?: ModoTema.SISTEMA.name) }
             .getOrDefault(ModoTema.SISTEMA)
@@ -26,7 +30,14 @@ class AjustesPreferencias(context: Context) {
         _modoTema.value = modo
     }
 
+    fun cambiarPresupuestoDeudas(valor: Long) {
+        val v = valor.coerceAtLeast(0L)
+        prefs.edit().putLong(CLAVE_PRESUPUESTO, v).apply()
+        _presupuestoDeudas.value = v
+    }
+
     private companion object {
         const val CLAVE_TEMA = "modo_tema"
+        const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
     }
 }

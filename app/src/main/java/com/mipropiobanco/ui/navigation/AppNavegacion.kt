@@ -2,6 +2,7 @@ package com.mipropiobanco.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.Savings
@@ -31,6 +32,8 @@ import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.screens.AjustesScreen
 import com.mipropiobanco.ui.screens.AportesScreen
 import com.mipropiobanco.ui.screens.DashboardScreen
+import com.mipropiobanco.ui.screens.DeudasScreen
+import com.mipropiobanco.ui.screens.DetalleDeudaScreen
 import com.mipropiobanco.ui.screens.DetallePrestamoScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
 import com.mipropiobanco.ui.screens.PrestamosScreen
@@ -42,6 +45,8 @@ private object Rutas {
     const val AJUSTES = "ajustes"
     const val NUEVO_PRESTAMO = "nuevo_prestamo"
     const val DETALLE_PRESTAMO = "prestamo"
+    const val DEUDAS = "deudas"
+    const val DETALLE_DEUDA = "deuda"
 }
 
 private data class Destino(val ruta: String, val etiqueta: String, val icono: ImageVector)
@@ -50,6 +55,7 @@ private val destinosPrincipales = listOf(
     Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
     Destino(Rutas.APORTES, "Aportes", Icons.Filled.Savings),
     Destino(Rutas.PRESTAMOS, "Préstamos", Icons.Filled.RequestQuote),
+    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard),
     Destino(Rutas.AJUSTES, "Ajustes", Icons.Filled.Settings)
 )
 
@@ -86,7 +92,7 @@ fun AppNavegacion(vm: BancoViewModel) {
                             selected = d == pestanaActual,
                             onClick = { nav.irAPestana(d.ruta) },
                             icon = { Icon(d.icono, contentDescription = null) },
-                            label = { Text(d.etiqueta) }
+                            label = { Text(d.etiqueta, maxLines = 1) }
                         )
                     }
                 }
@@ -105,7 +111,8 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
                     alRegistrarPago = { nav.irAPestana(Rutas.PRESTAMOS) },
                     alRespaldo = { nav.irAPestana(Rutas.AJUSTES) },
-                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) }
                 )
             }
             composable(
@@ -122,6 +129,19 @@ fun AppNavegacion(vm: BancoViewModel) {
                     vm = vm,
                     alNuevo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
                     alAbrir = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
+                )
+            }
+            composable(Rutas.DEUDAS) {
+                DeudasScreen(vm = vm, alAbrir = { id -> nav.navigate("${Rutas.DETALLE_DEUDA}/$id") })
+            }
+            composable(
+                route = "${Rutas.DETALLE_DEUDA}/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType })
+            ) { e ->
+                DetalleDeudaScreen(
+                    vm = vm,
+                    deudaId = e.arguments?.getLong("id") ?: 0L,
+                    alVolver = { nav.popBackStack() }
                 )
             }
             composable(Rutas.AJUSTES) {

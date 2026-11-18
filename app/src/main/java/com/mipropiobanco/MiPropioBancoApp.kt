@@ -9,7 +9,7 @@ import com.mipropiobanco.data.repository.BancoRepository
 /** Contenedor de dependencias sencillo (sin librerías de inyección). */
 class MiPropioBancoApp : Application() {
     val baseDatos: BancoDatabase by lazy { BancoDatabase.crear(this) }
-    val repositorio: BancoRepository by lazy { BancoRepository(baseDatos) }
-    val respaldo: BackupManager by lazy { BackupManager(baseDatos) }
     val preferencias: AjustesPreferencias by lazy { AjustesPreferencias(this) }
+    val repositorio: BancoRepository by lazy { BancoRepository(baseDatos) }
+    val respaldo: BackupManager by lazy { BackupManager(baseDatos, preferencias) }
 }

@@ -38,7 +38,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mipropiobanco.data.local.TipoPrestamoEntity
 import com.mipropiobanco.data.prefs.ModoTema
+import com.mipropiobanco.ui.components.CampoTasa
+import com.mipropiobanco.ui.components.FilaResumen
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.mipropiobanco.ui.BancoViewModel
 import com.mipropiobanco.ui.components.Encabezado
 import com.mipropiobanco.util.Formato
@@ -46,8 +54,8 @@ import com.mipropiobanco.util.Formato
 val REGLAMENTO = listOf(
     "Regla de reserva: nunca prestes más del 70% de lo disponible en la bóveda. El 30% restante es tu colchón de emergencia y nunca se presta.",
     "La cuota es sagrada: se paga el mismo día del mes, por transferencia programada a la cuenta-bóveda, antes de cualquier otro gasto. No se aplaza ni se perdona.",
-    "Tasa honesta: tu autotasa nunca es 0% ni menor que lo que rinde la cuenta de ahorro (≈0,75% mes). Por defecto 1,5% mensual.",
-    "Un préstamo a la vez: no se abre un nuevo autopréstamo hasta haber devuelto al menos el 50% del anterior, y solo para compras planeadas, nunca para gustos impulsivos.",
+    "Tasa definida y mora: cada préstamo usa la tasa de su tipo (por defecto, la usura vigente) y nunca 0%. Si te atrasas, pagas interés de mora por cada día.",
+    "Un préstamo a la vez y deudas primero: no se abre otro autopréstamo hasta devolver el 50% del anterior, y mientras tengas deudas con terceros, el excedente va a la bola de nieve.",
     "El aporte mensual y los intereses no se tocan: el aporte fijo es aparte de la cuota y los autointereses se reinvierten durante al menos 24 meses."
 )
 
@@ -55,6 +63,9 @@ val REGLAMENTO = listOf(
 fun AjustesScreen(vm: BancoViewModel) {
     val modo by vm.modoTema.collectAsStateWithLifecycle()
     var confirmarImportacion by remember { mutableStateOf(false) }
+    val tipos by vm.tipos.collectAsStateWithLifecycle()
+    var tipoEditando by remember { mutableStateOf<TipoPrestamoEntity?>(null) }
+    var tipoNuevo by remember { mutableStateOf(false) }
 
     val exportarJson = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -93,6 +104,33 @@ fun AjustesScreen(vm: BancoViewModel) {
                                 Text("  " + opcion.etiqueta)
                             }
                         }
+                    }
+                }
+            }
+            item {
+                Seccion("Tipos de préstamo y tasas") {
+                    Text(
+                        "Tasas de usura de noviembre de 2026 (Superfinanciera). Cambian cada mes: " +
+                            "actualízalas aquí. Solo afectan los préstamos nuevos.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    tipos.forEach { t ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(t.nombre, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${Formato.tasa(t.tasaEA)} E.A. · mora ${Formato.tasa(t.tasaMoraEA)} E.A.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            IconButton(onClick = { tipoEditando = t }) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Editar ${t.nombre}")
+                            }
+                        }
+                    }
+                    OutlinedButton(onClick = { tipoNuevo = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Text("  Agregar tipo")
                     }
                 }
             }
@@ -144,13 +182,25 @@ fun AjustesScreen(vm: BancoViewModel) {
             item {
                 Seccion("Acerca de") {
                     Text(
-                        "Mi Propio Banco 1.0 · 100% offline, sin servidores ni permisos de internet. " +
+                        "Mi Propio Banco · 100% offline, sin servidores ni permisos de internet. " +
                             "Montos en pesos colombianos sin decimales; cuotas por sistema francés.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
+    }
+
+    if (tipoNuevo || tipoEditando != null) {
+        DialogoTipo(
+            tipo = tipoEditando,
+            alGuardar = { nombre, ea, mora -> vm.guardarTipo(tipoEditando?.id, nombre, ea, mora) },
+            alEliminar = tipoEditando?.let { t -> { vm.eliminarTipo(t) } },
+            alCerrar = {
+                tipoNuevo = false
+                tipoEditando = null
+            }
+        )
     }
 
     if (confirmarImportacion) {
@@ -183,4 +233,54 @@ private fun Seccion(titulo: String, contenido: @Composable () -> Unit) {
             contenido()
         }
     }
+}
+
+@Composable
+private fun DialogoTipo(
+    tipo: TipoPrestamoEntity?,
+    alGuardar: (String, Double, Double) -> Unit,
+    alEliminar: (() -> Unit)?,
+    alCerrar: () -> Unit
+) {
+    var nombre by rememberSaveable { mutableStateOf(tipo?.nombre.orEmpty()) }
+    var tasa by rememberSaveable { mutableStateOf(tipo?.tasaEA?.let { Formato.decimal(it) }.orEmpty()) }
+    var mora by rememberSaveable { mutableStateOf(tipo?.tasaMoraEA?.let { Formato.decimal(it) }.orEmpty()) }
+    val tasaV = Formato.parsearDecimal(tasa)
+    val moraV = Formato.parsearDecimal(mora)
+    val valido = nombre.isNotBlank() && tasaV != null && tasaV in 0.0..300.0 && moraV != null && moraV in 0.0..300.0
+
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text(if (tipo == null) "Nuevo tipo de préstamo" else "Editar tipo") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(
+                    value = nombre,
+                    onValueChange = { nombre = it.take(40) },
+                    label = { Text("Nombre") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                CampoTasa(valor = tasa, alCambiar = { tasa = it }, etiqueta = "Tasa de interés (usura)")
+                CampoTasa(valor = mora, alCambiar = { mora = it }, etiqueta = "Tasa de mora", apoyo = "En Colombia la mora no puede superar la usura")
+                if (tasaV != null) {
+                    FilaResumen("Equivale mensual", Formato.tasa(com.mipropiobanco.domain.Tasas.periodoDesdeEA(tasaV, com.mipropiobanco.domain.Periodicidad.MENSUAL)))
+                    FilaResumen("Equivale diaria", Formato.tasa(com.mipropiobanco.domain.Tasas.periodoDesdeEA(tasaV, com.mipropiobanco.domain.Periodicidad.DIARIA)))
+                }
+                if (alEliminar != null) {
+                    TextButton(onClick = {
+                        alEliminar()
+                        alCerrar()
+                    }) { Text("Eliminar este tipo", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valido, onClick = {
+                alGuardar(nombre, tasaV ?: 0.0, moraV ?: 0.0)
+                alCerrar()
+            }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
 }
