@@ -42,9 +42,11 @@ enum class OrigenFaltante { INGRESO, PRESTAMO, YA_LA_TENIA }
 fun TarjetaCuadre(
     c: Cuadre,
     titulo: String,
+    alCorregirInicio: (Long, OrigenFaltante, String) -> Unit = { _, _, _ -> },
     alExplicar: (MedioPagoEntity, Long, OrigenFaltante, String) -> Unit
 ) {
     var explicando by remember { mutableStateOf<Pair<MedioPagoEntity, Long>?>(null) }
+    var corrigiendoInicio by remember { mutableStateOf(false) }
     val verde = MaterialTheme.colorScheme.primary
     val rojo = MaterialTheme.colorScheme.error
 
@@ -59,7 +61,14 @@ fun TarjetaCuadre(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Fila("Empezaste con", c.inicio, null)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Fila("Empezaste con", c.inicio, null)
+                }
+            }
+            TextButton(onClick = { corrigiendoInicio = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                Text("¿No empezaste con eso? Corrígelo aquí", style = MaterialTheme.typography.labelMedium)
+            }
             if (c.ganado > 0L) Fila("💪 Ganaste", c.ganado, verde, "+")
             if (c.prestado > 0L) Fila("🤝 Te prestaron (es deuda)", c.prestado, verde, "+")
             if (c.deMiBanco > 0L) Fila("🏦 Sacaste de Mi banco", c.deMiBanco, verde, "+")
@@ -96,6 +105,64 @@ fun TarjetaCuadre(
                 }
             }
         }
+    }
+
+    if (corrigiendoInicio) {
+        var real by remember { mutableStateOf("") }
+        var pidiendoNombre by remember { mutableStateOf(false) }
+        var acreedor by remember { mutableStateOf("") }
+        val realV = real.toLongOrNull()
+        val falta = if (realV != null) c.inicio - realV else 0L
+        AlertDialog(
+            onDismissRequest = { corrigiendoInicio = false },
+            title = { Text("¿Con cuánto empezaste el mes?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "La app cree que empezaste con ${Formato.cop(c.inicio)} sumando todas tus cuentas y el efectivo. Escribe lo que tenías de verdad el día 1:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    CampoMonto(valor = real, alCambiar = { real = it }, etiqueta = "Lo que tenía el día 1")
+                    if (realV != null && falta > 0L) {
+                        Text(
+                            "Entonces ${Formato.cop(falta)} de lo que gastaste salió de algún lado que no está anotado. ¿Qué fue?",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (!pidiendoNombre) {
+                            OutlinedButton(onClick = { alCorregirInicio(realV, OrigenFaltante.INGRESO, ""); corrigiendoInicio = false }, modifier = Modifier.fillMaxWidth()) {
+                                Text("💪 Ingresos que no anoté")
+                            }
+                            OutlinedButton(onClick = { pidiendoNombre = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("🤝 Alguien me prestó (es deuda)")
+                            }
+                            Text(
+                                "Si crees que hay gastos repetidos, revisa primero 🧹 Limpiar en Correos del banco.",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = acreedor, onValueChange = { acreedor = it },
+                                label = { Text("¿Quién te prestó?") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    } else if (realV != null && falta < 0L) {
+                        Text(
+                            "Tenías ${Formato.cop(-falta)} más de lo que la app cree: entonces hay gastos que no están anotados. Guardar ajusta el punto de partida y la diferencia queda como gasto sin detalle.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (realV != null && (falta < 0L || pidiendoNombre)) {
+                    FilledTonalButton(onClick = {
+                        alCorregirInicio(realV, if (pidiendoNombre) OrigenFaltante.PRESTAMO else OrigenFaltante.YA_LA_TENIA, acreedor)
+                        corrigiendoInicio = false
+                    }) { Text("Guardar") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { corrigiendoInicio = false }) { Text("Cancelar") } }
+        )
     }
 
     explicando?.let { (medio, monto) ->

@@ -317,7 +317,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 item { TarjetaResumenMes(resumen, medMap) }
                 item {
                     val cuadre = com.mipropiobanco.domain.Cuadre.de(movimientos, medios, categorias, mes)
-                    com.mipropiobanco.ui.components.TarjetaCuadre(cuadre, "🧮 Cuadre de ${mes.titulo()}") { medio, monto, origen, acreedor ->
+                    com.mipropiobanco.ui.components.TarjetaCuadre(cuadre, "🧮 Cuadre de ${mes.titulo()}", alCorregirInicio = { real, origen, acreedor -> vm.corregirInicio(mes, real, origen, acreedor) }) { medio, monto, origen, acreedor ->
                         vm.explicarFaltante(medio, monto, origen, acreedor)
                     }
                 }

@@ -168,6 +168,40 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { it }
     )
 
+    /**
+     * El usuario dice con cuánto empezó el mes de verdad. La diferencia con lo que la app calculaba
+     * se explica: ingresos no anotados, un préstamo (deuda) o, si tenía más, gastos sin detalle.
+     * El saldo de hoy no cambia: se corrige el punto de partida y se anota la explicación en el mes.
+     */
+    fun corregirInicio(mes: java.time.YearMonth, real: Long, origen: com.mipropiobanco.ui.components.OrigenFaltante, acreedor: String) = ejecutar(
+        accion = {
+            val movs = finanzas.movimientos.first()
+            val meds = finanzas.medios.first()
+            val cuadre = com.mipropiobanco.domain.Cuadre.de(movs, meds, finanzas.categorias.first(), mes)
+            val diferencia = cuadre.inicio - real
+            if (diferencia == 0L) return@ejecutar "Ya estaba cuadrado"
+            val medio = finanzas.medioPorDefecto() ?: throw IllegalStateException("Crea primero una cuenta")
+            guardarPunto("corregir inicio de ${Formato.mesAnio(mes)}")
+            val dia1 = Formato.aMillis(mes.atDay(1))
+            finanzas.sumarSaldoInicial(medio.id, -diferencia)
+            if (diferencia > 0L) {
+                if (origen == com.mipropiobanco.ui.components.OrigenFaltante.PRESTAMO) {
+                    val quien = acreedor.trim().ifBlank { "Préstamo recibido" }
+                    finanzas.guardarMovimiento(null, TipoMovimiento.INGRESO, diferencia, finanzas.categoriaPrestamosRecibidos(), medio.id, dia1, "Préstamo de $quien", null)
+                    repo.guardarDeuda(null, quien, diferencia, diferencia, 0.0, mes.atDay(1).dayOfMonth.coerceIn(1, 28))
+                    "🤝 Cuadrado: ${Formato.cop(diferencia)} eran un préstamo de $quien (ya está en Deudas)"
+                } else {
+                    finanzas.guardarMovimiento(null, TipoMovimiento.INGRESO, diferencia, finanzas.categoriaOtrosIngresos(), medio.id, dia1, "Ingresos que no se habían anotado", null)
+                    "💪 Cuadrado: ${Formato.cop(diferencia)} de ingresos que no estaban anotados"
+                }
+            } else {
+                finanzas.guardarMovimiento(null, TipoMovimiento.GASTO, -diferencia, finanzas.categoriaPorClasificar(), medio.id, dia1, "Gastos que no se habían anotado", null)
+                "Cuadrado: ${Formato.cop(-diferencia)} de gastos sin detalle (en Por clasificar)"
+            }
+        },
+        mensaje = { it }
+    )
+
     // ---------- Extracto: varios movimientos en una sola captura ----------
 
     private val _extracto = MutableStateFlow<List<com.mipropiobanco.domain.FilaExtracto>>(emptyList())
