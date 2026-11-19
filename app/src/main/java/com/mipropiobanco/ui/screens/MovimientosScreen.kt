@@ -258,6 +258,12 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                             )
                         }
                     }
+                } else {
+                    item {
+                        androidx.compose.material3.OutlinedButton(onClick = alBandeja, modifier = Modifier.fillMaxWidth()) {
+                            Text("📥 Correos del banco (buscar / releer)")
+                        }
+                    }
                 }
                 item {
                     Card(
