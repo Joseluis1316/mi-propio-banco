@@ -10,6 +10,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -42,12 +44,14 @@ import com.mipropiobanco.ui.screens.DetallePrestamoScreen
 import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.LoginScreen
 import com.mipropiobanco.ui.screens.MetasScreen
+import com.mipropiobanco.ui.screens.IngresosScreen
 import com.mipropiobanco.ui.screens.MovimientosScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
 
 private object Rutas {
     const val INICIO = "inicio"
     const val MOVIMIENTOS = "movimientos"
+    const val INGRESOS = "ingresos"
     const val CALENDARIO = "calendario"
     const val BANCO = "banco"
     const val DEUDAS = "deudas"
@@ -64,9 +68,10 @@ private data class Destino(val ruta: String, val etiqueta: String, val icono: Im
 
 private val destinosPrincipales = listOf(
     Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
+    Destino(Rutas.INGRESOS, "Ingresos", Icons.AutoMirrored.Filled.TrendingUp),
     Destino(Rutas.MOVIMIENTOS, "Gastos", Icons.Filled.AccountBalanceWallet),
-    Destino(Rutas.CALENDARIO, "Calendario", Icons.Filled.CalendarMonth),
-    Destino(Rutas.BANCO, "Mi banco", Icons.Filled.Savings),
+    Destino(Rutas.CALENDARIO, "Agenda", Icons.Filled.CalendarMonth),
+    Destino(Rutas.BANCO, "Banco", Icons.Filled.Savings),
     Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard)
 )
 
@@ -115,7 +120,7 @@ fun AppNavegacion(vm: BancoViewModel) {
                             selected = d == pestanaActual,
                             onClick = { nav.irAPestana(d.ruta) },
                             icon = { Icon(d.icono, contentDescription = null) },
-                            label = { Text(d.etiqueta, maxLines = 1) }
+                            label = { Text(d.etiqueta, maxLines = 1, style = MaterialTheme.typography.labelSmall) }
                         )
                     }
                 }
@@ -142,6 +147,13 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alAjustes = { nav.navigate(Rutas.AJUSTES) },
                     alBandeja = { nav.navigate(Rutas.BANDEJA) },
                     alMetas = { nav.navigate(Rutas.METAS) }
+                )
+            }
+            composable(Rutas.INGRESOS) {
+                IngresosScreen(
+                    vm = vm,
+                    alHablar = { nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=VOZ") },
+                    alFoto = { nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=FOTO") }
                 )
             }
             composable(Rutas.METAS) {
