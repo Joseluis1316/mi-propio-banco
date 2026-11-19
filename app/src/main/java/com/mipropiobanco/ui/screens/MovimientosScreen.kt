@@ -142,6 +142,15 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val mes = YearMonth.parse(mesTexto)
     var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
     var ajustandoSaldos by rememberSaveable { mutableStateOf(false) }
+    val extracto by vm.extracto.collectAsStateWithLifecycle()
+    if (extracto.isNotEmpty()) {
+        DialogoExtracto(
+            filas = extracto,
+            yaRegistrado = { vm.yaRegistrado(it) },
+            alGuardar = { destinos, acreedores -> vm.guardarExtracto(extracto, destinos, acreedores) },
+            alCancelar = { vm.descartarExtracto() }
+        )
+    }
     val reportePdf = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri -> uri?.let { vm.exportarReporte(it, mes) } }

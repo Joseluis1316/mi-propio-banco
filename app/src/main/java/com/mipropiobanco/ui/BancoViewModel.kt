@@ -90,14 +90,98 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     ) = ejecutar(
         accion = {
             finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto, medioDestinoId)
+            if (id == null) crearDeudaSiEsPrestamo(tipo, monto, categoriaId, fecha, nota) else null
         },
-        mensaje = {
+        mensaje = { acreedor ->
             when {
+                acreedor != null -> "🤝 Ingreso guardado y deuda con $acreedor creada (ajústala en Deudas)"
                 id != null -> "Movimiento actualizado"
                 tipo == TipoMovimiento.TRASLADO -> "Traslado de ${Formato.cop(monto)} registrado"
                 repetir != null -> "${tipo.etiqueta} guardado y plantilla fija creada"
                 else -> "${tipo.etiqueta} de ${Formato.cop(monto)} guardado"
             }
+        }
+    )
+
+    /**
+     * Si el ingreso es de la categoría "Préstamos recibidos", esa plata hay que devolverla:
+     * se crea la deuda con esa persona por el mismo monto. Devuelve a quién, o null.
+     */
+    private suspend fun crearDeudaSiEsPrestamo(tipo: TipoMovimiento, monto: Long, categoriaId: Long, fecha: Long, nota: String): String? {
+        if (tipo != TipoMovimiento.INGRESO || monto <= 0L) return null
+        val cat = finanzas.categorias.first().firstOrNull { it.id == categoriaId } ?: return null
+        val n = Interprete.normalizar(cat.nombre)
+        if (!(n.contains("prestamo") && n.contains("recib"))) return null
+        val acreedor = nota
+            .replace(Regex("(?i)^(transferencia (desde|de)|pago de|recibiste( un pago)? de|prestamo de|préstamo de)\\s*"), "")
+            .trim().ifBlank { "Préstamo recibido" }.take(40)
+        val dia = Formato.aLocalDate(fecha).dayOfMonth.coerceIn(1, 28)
+        repo.guardarDeuda(null, acreedor, monto, monto, 0.0, dia)
+        return acreedor
+    }
+
+    // ---------- Extracto: varios movimientos en una sola captura ----------
+
+    private val _extracto = MutableStateFlow<List<com.mipropiobanco.domain.FilaExtracto>>(emptyList())
+    /** Movimientos leídos de una captura del extracto, esperando que los confirmes. */
+    val extracto: StateFlow<List<com.mipropiobanco.domain.FilaExtracto>> = _extracto.asStateFlow()
+
+    fun descartarExtracto() { _extracto.value = emptyList() }
+
+    /** ¿Ya está anotado (mismo monto y tipo, ±1 día)? */
+    fun yaRegistrado(f: com.mipropiobanco.domain.FilaExtracto): Boolean {
+        val tipos = if (f.salida) setOf(TipoMovimiento.GASTO.name, TipoMovimiento.TRASLADO.name) else setOf(TipoMovimiento.INGRESO.name)
+        return movimientos.value.any {
+            it.monto == f.monto && it.tipo in tipos &&
+                kotlin.math.abs(java.time.temporal.ChronoUnit.DAYS.between(Formato.aLocalDate(it.fecha), f.fecha)) <= 1
+        }
+    }
+
+    /** Guarda las filas elegidas. [acreedores]: nombre de quien prestó, para las filas de préstamo. */
+    fun guardarExtracto(
+        filas: List<com.mipropiobanco.domain.FilaExtracto>,
+        destinos: List<com.mipropiobanco.domain.DestinoFila>,
+        acreedores: List<String>
+    ) = ejecutar(
+        accion = {
+            guardarPunto("guardar movimientos del extracto")
+            val cats = finanzas.categorias.first()
+            val medio = finanzas.medioPorDefecto() ?: throw IllegalStateException("Crea primero un medio de pago")
+            var guardados = 0
+            var deudas = 0
+            filas.forEachIndexed { i, f ->
+                val destino = destinos.getOrNull(i) ?: com.mipropiobanco.domain.DestinoFila.OMITIR
+                val fecha = Formato.aMillis(f.fecha)
+                val t = Interprete.normalizar(f.descripcion)
+                when (destino) {
+                    com.mipropiobanco.domain.DestinoFila.GASTO -> {
+                        val cat = Interprete.detectarCategoria(t, TipoMovimiento.GASTO, cats)?.id ?: finanzas.categoriaPorClasificar()
+                        finanzas.guardarMovimiento(null, TipoMovimiento.GASTO, f.monto, cat, medio.id, fecha, f.descripcion.take(80), null)
+                        guardados++
+                    }
+                    com.mipropiobanco.domain.DestinoFila.INGRESO -> {
+                        val cat = Interprete.detectarCategoria(t, TipoMovimiento.INGRESO, cats)?.id ?: finanzas.categoriaOtrosIngresos()
+                        finanzas.guardarMovimiento(null, TipoMovimiento.INGRESO, f.monto, cat, medio.id, fecha, f.descripcion.take(80), null)
+                        guardados++
+                    }
+                    com.mipropiobanco.domain.DestinoFila.PRESTAMO -> {
+                        val quien = acreedores.getOrNull(i)?.trim().orEmpty().ifBlank { f.descripcion.take(40) }
+                        finanzas.guardarMovimiento(
+                            null, TipoMovimiento.INGRESO, f.monto, finanzas.categoriaPrestamosRecibidos(), medio.id, fecha,
+                            "Préstamo de $quien", null
+                        )
+                        repo.guardarDeuda(null, quien, f.monto, f.monto, 0.0, f.fecha.dayOfMonth.coerceIn(1, 28))
+                        guardados++
+                        deudas++
+                    }
+                    com.mipropiobanco.domain.DestinoFila.OMITIR -> Unit
+                }
+            }
+            _extracto.value = emptyList()
+            guardados to deudas
+        },
+        mensaje = { (g, d) ->
+            "📋 $g movimientos guardados" + if (d > 0) " · $d deudas creadas en Deudas" else ""
         }
     )
 
@@ -130,6 +214,13 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                 val nomina = InterpreteNomina.interpretar(texto, ruta)
                 if (nomina != null) {
                     alNomina(nomina)
+                    return@launch
+                }
+                // Captura de la lista de movimientos del banco: uno por uno.
+                val filas = com.mipropiobanco.domain.InterpreteExtracto.interpretar(texto)
+                if (filas.size >= 2) {
+                    _extracto.value = filas
+                    _mensajes.emit("📋 Encontré ${filas.size} movimientos en la imagen: revísalos uno por uno")
                     return@launch
                 }
                 val propuesta = Interprete.interpretarRecibo(texto, ruta, categorias.value, medios.value)
@@ -449,6 +540,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     ) = ejecutar(
         accion = {
             finanzas.guardarMovimiento(null, tipo, monto, categoriaId, medioId, fecha, nota, null, null, null, medioDestinoId)
+            crearDeudaSiEsPrestamo(tipo, monto, categoriaId, fecha, nota)
             propuesta.patronRegla?.let { finanzas.recordarRegla(it, tipo, categoriaId, medioDestinoId) }
             propuesta.idBandeja?.let { nube.quitarDeBandeja(it) }
             if (deudaId != null) repo.abonarDeuda(deudaId, monto, fecha)
@@ -980,6 +1072,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
 
     init {
         Formato.ocultar = preferencias.ocultarSaldos.value
+        viewModelScope.launch { runCatching { finanzas.categoriaPrestamosRecibidos() } }
         viewModelScope.launch {
             try { respaldoDiario() } catch (e: CancellationException) { throw e } catch (_: Exception) { }
         }

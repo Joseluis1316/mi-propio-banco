@@ -299,6 +299,11 @@ class FinanzasRepository(private val db: BancoDatabase) {
         m.foto?.let { ruta -> if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() } }
     }
 
+    /** Ingreso que en realidad es plata prestada por otra persona (se vuelve deuda). */
+    suspend fun categoriaPrestamosRecibidos(): Long = categoriaPorNombre("Préstamos recibidos", TipoMovimiento.INGRESO, "🤝")
+
+    suspend fun categoriaOtrosIngresos(): Long = categoriaPorNombre("Otros ingresos", TipoMovimiento.INGRESO, "➕")
+
     /** Categoría para los gastos que llegan por correo y aún no clasificas. */
     suspend fun categoriaPorClasificar(): Long = categoriaPorNombre("Por clasificar", TipoMovimiento.GASTO, "🏷️")
 
