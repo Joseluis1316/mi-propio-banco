@@ -138,6 +138,14 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val mes = YearMonth.parse(mesTexto)
     var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
     var ajustandoSaldos by rememberSaveable { mutableStateOf(false) }
+    var eligiendoInicio by rememberSaveable { mutableStateOf(false) }
+    if (eligiendoInicio) {
+        DialogoInicio(
+            movimientos = movimientos,
+            alCerrar = { eligiendoInicio = false },
+            alConfirmar = { vm.empezarDesde(it); eligiendoInicio = false }
+        )
+    }
     if (ajustandoSaldos) {
         DialogoSaldos(
             medios = medios,
@@ -285,6 +293,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.weight(1f)
                                 )
+                                TextButton(onClick = { eligiendoInicio = true }) { Text("📅 Desde") }
                                 TextButton(onClick = { ajustandoSaldos = true }) { Text("✏️ Ajustar") }
                             }
                             val conMovimiento = medios.filter { m -> (saldos[m.id] ?: 0L) != 0L || m.saldoInicial != 0L }
@@ -1038,7 +1047,7 @@ private fun DialogoSaldos(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Checkbox(checked = comoMovimiento, onCheckedChange = { comoMovimiento = it })
                     Text(
-                        if (comoMovimiento) "La diferencia se anota hoy como gasto (Otros gastos), o como ingreso si te falta registrar plata."
+                        if (comoMovimiento) "Si la app cree que tienes más plata, la diferencia se anota hoy como gasto (Otros gastos). Si cree que tienes menos, solo se ajusta el punto de partida."
                         else "Solo ajustar el punto de partida, sin anotar gasto ni ingreso.",
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -1063,6 +1072,37 @@ private fun DialogoSaldos(
                 )
             }) { Text("Guardar") }
         },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+}
+
+
+/** Elige desde qué fecha llevar las cuentas; lo anterior se borra sin cambiar lo que tienes hoy. */
+@Composable
+private fun DialogoInicio(
+    movimientos: List<com.mipropiobanco.data.local.MovimientoEntity>,
+    alCerrar: () -> Unit,
+    alConfirmar: (Long) -> Unit
+) {
+    var fecha by rememberSaveable {
+        mutableStateOf(Formato.aMillis(java.time.LocalDate.now().withDayOfMonth(1)))
+    }
+    val aBorrar = movimientos.filter { it.fecha < fecha || it.nota.startsWith("Ajuste:") }
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text("📅 Llevar cuentas desde…") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.mipropiobanco.ui.components.SelectorFecha("Desde", fecha, { fecha = it })
+                Text(
+                    "Se borrarán ${aBorrar.size} movimientos anteriores a esa fecha (y los ajustes de saldo). " +
+                        "Lo que tienes hoy en cada cuenta no cambia, y los correos de antes de esa fecha se ignoran.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text("Borrar no se puede deshacer.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { FilledTonalButton(onClick = { alConfirmar(fecha) }) { Text("Empezar desde aquí") } },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
     )
 }

@@ -29,6 +29,15 @@ class AjustesPreferencias(context: Context) {
     private val _autoCorreos = MutableStateFlow(prefs.getBoolean(CLAVE_AUTO_CORREOS, true))
     val autoCorreos: StateFlow<Boolean> = _autoCorreos.asStateFlow()
 
+    /** Desde qué fecha se llevan las cuentas (ms). 0 = desde siempre. Correos anteriores se ignoran. */
+    private val _fechaInicio = MutableStateFlow(prefs.getLong(CLAVE_FECHA_INICIO, 0L))
+    val fechaInicio: StateFlow<Long> = _fechaInicio.asStateFlow()
+
+    fun cambiarFechaInicio(valor: Long) {
+        prefs.edit().putLong(CLAVE_FECHA_INICIO, valor).apply()
+        _fechaInicio.value = valor
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -74,6 +83,7 @@ class AjustesPreferencias(context: Context) {
 
     private companion object {
         const val CLAVE_TEMA = "modo_tema"
+        const val CLAVE_FECHA_INICIO = "fecha_inicio"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"

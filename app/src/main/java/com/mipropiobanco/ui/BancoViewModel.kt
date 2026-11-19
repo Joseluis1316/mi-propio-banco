@@ -289,6 +289,13 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                 val m = InterpreteCorreo.interpretar(
                     c.id, c.texto, Formato.aLocalDate(c.fecha.takeIf { it > 0L } ?: Formato.hoyMillis())
                 ) ?: continue
+                // Anterior a la fecha desde la que llevas las cuentas: no cuenta.
+                val inicio = preferencias.fechaInicio.value
+                if (inicio > 0L && Formato.aMillis(m.fecha) < inicio) {
+                    correosProcesados.add(c.id)
+                    runCatching { nube.quitarDeBandeja(c.id) }.onSuccess { descartados++ }
+                    continue
+                }
                 // Ya registrado (mismo tipo y monto, mismo día o el siguiente): se descarta solo.
                 if (InterpreteCorreo.buscarDuplicado(m, existentes, dias = 1) != null) {
                     correosProcesados.add(c.id)
@@ -408,6 +415,17 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                 (if (u.ajustesBorrados > 0) " · ${u.ajustesBorrados} ajustes anteriores borrados" else "") +
                 ". Ahora pon tu saldo real en ✏️ Ajustar."
         }
+    )
+
+    val fechaInicio: StateFlow<Long> = preferencias.fechaInicio
+
+    fun empezarDesde(inicio: Long) = ejecutar(
+        accion = {
+            val n = finanzas.empezarDesde(inicio)
+            preferencias.cambiarFechaInicio(inicio)
+            n
+        },
+        mensaje = { n -> "📅 Cuentas desde el ${Formato.fecha(inicio)} · $n movimientos anteriores borrados" }
     )
 
     fun eliminarMedio(m: MedioPagoEntity) = ejecutar(

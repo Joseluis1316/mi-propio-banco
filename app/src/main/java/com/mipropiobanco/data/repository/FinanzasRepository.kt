@@ -88,7 +88,9 @@ class FinanzasRepository(private val db: BancoDatabase) {
                 val medio = medios.firstOrNull { it.id == id } ?: return@forEach
                 val diferencia = (actuales[id] ?: 0L) - real
                 if (diferencia == 0L) return@forEach
-                if (comoMovimiento) {
+                // Si falta plata registrada, es dinero que ya tenías antes: se ajusta el punto de partida,
+                // nunca se inventa un ingreso en el mes.
+                if (comoMovimiento && diferencia > 0L) {
                     val gasto = diferencia > 0L
                     val tipo = if (gasto) TipoMovimiento.GASTO else TipoMovimiento.INGRESO
                     movimientoDao.insertar(
@@ -152,6 +154,35 @@ class FinanzasRepository(private val db: BancoDatabase) {
             origenes.forEach { medioDao.actualizar(it.copy(saldoInicial = 0L)) }
         }
         return Union(movidos, ajustes, origenes.map { it.nombre })
+    }
+
+    /**
+     * Lleva las cuentas solo desde [inicio]: borra los movimientos anteriores y los ajustes de saldo,
+     * y fija el punto de partida para que lo que tienes hoy en cada cuenta no cambie.
+     * Devuelve cuántos movimientos se borraron.
+     */
+    suspend fun empezarDesde(inicio: Long): Int {
+        val medios = medioDao.obtenerTodos()
+        val movs = movimientoDao.obtenerTodos()
+        val hoy = com.mipropiobanco.domain.calcularSaldos(medios, movs)
+        val borrar = movs.filter { it.fecha < inicio || it.nota.startsWith("Ajuste:") }
+        val ids = borrar.map { it.id }.toSet()
+        val quedan = movs.filter { it.id !in ids }
+        val netos = com.mipropiobanco.domain.calcularSaldos(medios.map { it.copy(saldoInicial = 0L) }, quedan)
+        val antesDeInicio = Formato.aLocalDate(inicio).minusDays(1)
+        db.withTransaction {
+            borrar.forEach { movimientoDao.eliminar(it) }
+            medios.forEach { m -> medioDao.actualizar(m.copy(saldoInicial = (hoy[m.id] ?: 0L) - (netos[m.id] ?: 0L))) }
+            // Los fijos que caían antes de la fecha ya no quedan pendientes.
+            plantillaDao.obtenerTodas().forEach { p ->
+                val viejas = Recurrencia.pendientes(p, antesDeInicio)
+                if (viejas.isNotEmpty()) plantillaDao.actualizar(p.copy(ultimaOcurrencia = viejas.last().indice))
+            }
+        }
+        borrar.mapNotNull { it.foto }.distinct().forEach { ruta ->
+            if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() }
+        }
+        return borrar.size
     }
 
     // ---------------- Reglas aprendidas de los correos ----------------
