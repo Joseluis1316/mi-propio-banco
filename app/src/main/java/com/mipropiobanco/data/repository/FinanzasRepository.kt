@@ -299,6 +299,16 @@ class FinanzasRepository(private val db: BancoDatabase) {
         m.foto?.let { ruta -> if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() } }
     }
 
+    /** "Ya tenía esa plata antes de empezar a anotar": sube el punto de partida de la cuenta. */
+    suspend fun sumarSaldoInicial(medioId: Long, monto: Long) {
+        val m = medioDao.obtenerTodos().firstOrNull { it.id == medioId } ?: return
+        medioDao.actualizar(m.copy(saldoInicial = m.saldoInicial + monto))
+    }
+
+    /** Saldo actual de una cuenta. */
+    suspend fun saldoDe(medioId: Long): Long =
+        com.mipropiobanco.domain.calcularSaldos(medioDao.obtenerTodos(), movimientoDao.obtenerTodos())[medioId] ?: 0L
+
     /** Ingreso que en realidad es plata prestada por otra persona (se vuelve deuda). */
     suspend fun categoriaPrestamosRecibidos(): Long = categoriaPorNombre("Préstamos recibidos", TipoMovimiento.INGRESO, "🤝")
 

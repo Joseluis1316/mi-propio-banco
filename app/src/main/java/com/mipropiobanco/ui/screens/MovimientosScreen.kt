@@ -315,6 +315,12 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                     }
                 }
                 item { TarjetaResumenMes(resumen, medMap) }
+                item {
+                    val cuadre = com.mipropiobanco.domain.Cuadre.de(movimientos, medios, categorias, mes)
+                    com.mipropiobanco.ui.components.TarjetaCuadre(cuadre, "🧮 Cuadre de ${mes.titulo()}") { medio, monto, origen, acreedor ->
+                        vm.explicarFaltante(medio, monto, origen, acreedor)
+                    }
+                }
                 if (resumen.gastoPorCategoria.isNotEmpty()) {
                     item {
                         val anterior = ResumenMes.de(movimientos, mes.minusMonths(1))

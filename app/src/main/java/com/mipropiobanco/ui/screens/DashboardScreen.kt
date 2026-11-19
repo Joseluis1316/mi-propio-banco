@@ -130,6 +130,14 @@ fun DashboardScreen(
             }
         }
 
+        // ---- Cuadre: todo tiene que concordar ----
+        item {
+            val cuadre = com.mipropiobanco.domain.Cuadre.de(movimientos, medios, categorias, YearMonth.now())
+            com.mipropiobanco.ui.components.TarjetaCuadre(cuadre, "🧮 Cuadre de ${Formato.mesAnio(YearMonth.now())}") { medio, monto, origen, acreedor ->
+                vm.explicarFaltante(medio, monto, origen, acreedor)
+            }
+        }
+
         // ---- Acciones rápidas ----
         item {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {

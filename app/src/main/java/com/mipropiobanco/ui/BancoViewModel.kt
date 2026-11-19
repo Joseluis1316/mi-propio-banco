@@ -90,7 +90,9 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     ) = ejecutar(
         accion = {
             finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto, medioDestinoId)
-            if (id == null) crearDeudaSiEsPrestamo(tipo, monto, categoriaId, fecha, nota) else null
+            val acreedor = if (id == null) crearDeudaSiEsPrestamo(tipo, monto, categoriaId, fecha, nota) else null
+            if (tipo != TipoMovimiento.INGRESO) avisarSiNoAlcanza(medioId)
+            acreedor
         },
         mensaje = { acreedor ->
             when {
@@ -119,6 +121,52 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         repo.guardarDeuda(null, acreedor, monto, monto, 0.0, dia)
         return acreedor
     }
+
+    /** Si la cuenta quedó en negativo, se gastó plata que no se sabe de dónde salió: se avisa. */
+    private suspend fun avisarSiNoAlcanza(medioId: Long) {
+        val saldo = finanzas.saldoDe(medioId)
+        if (saldo < 0L) {
+            val nombre = finanzas.medios.first().firstOrNull { it.id == medioId }?.nombre ?: "la cuenta"
+            kotlinx.coroutines.delay(1_500L)
+            _mensajes.emit("⚠️ $nombre quedó en ${Formato.cop(saldo)}: ¿de dónde salió esa plata? Cuádralo en Inicio")
+        }
+    }
+
+    /** Explica plata gastada sin origen: ingreso no anotado, préstamo (deuda) o saldo que ya se tenía. */
+    fun explicarFaltante(
+        medio: MedioPagoEntity,
+        monto: Long,
+        origen: com.mipropiobanco.ui.components.OrigenFaltante,
+        acreedor: String
+    ) = ejecutar(
+        accion = {
+            guardarPunto("cuadrar ${medio.nombre}")
+            val hoy = Formato.hoyMillis()
+            when (origen) {
+                com.mipropiobanco.ui.components.OrigenFaltante.INGRESO -> {
+                    finanzas.guardarMovimiento(
+                        null, TipoMovimiento.INGRESO, monto, finanzas.categoriaOtrosIngresos(), medio.id, hoy,
+                        "Ingreso que no se había anotado", null
+                    )
+                    "Ingreso de ${Formato.cop(monto)} anotado en ${medio.nombre}"
+                }
+                com.mipropiobanco.ui.components.OrigenFaltante.PRESTAMO -> {
+                    val quien = acreedor.trim().ifBlank { "Préstamo recibido" }
+                    finanzas.guardarMovimiento(
+                        null, TipoMovimiento.INGRESO, monto, finanzas.categoriaPrestamosRecibidos(), medio.id, hoy,
+                        "Préstamo de $quien", null
+                    )
+                    repo.guardarDeuda(null, quien, monto, monto, 0.0, java.time.LocalDate.now().dayOfMonth.coerceIn(1, 28))
+                    "🤝 Ingreso y deuda con $quien por ${Formato.cop(monto)} creados"
+                }
+                com.mipropiobanco.ui.components.OrigenFaltante.YA_LA_TENIA -> {
+                    finanzas.sumarSaldoInicial(medio.id, monto)
+                    "Punto de partida de ${medio.nombre} ajustado: ya tenías esa plata"
+                }
+            }
+        },
+        mensaje = { it }
+    )
 
     // ---------- Extracto: varios movimientos en una sola captura ----------
 
