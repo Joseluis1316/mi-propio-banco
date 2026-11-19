@@ -182,6 +182,17 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
             }
             item {
                 Seccion("Ingresos y gastos") {
+                    val conectarBanco by vm.conectarBanco.collectAsStateWithLifecycle()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Conectar Mi banco con mis cuentas")
+                            Text(
+                                "Aportes y cuotas salen de Bancolombia como gasto; el autopréstamo entra como ingreso.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = conectarBanco, onCheckedChange = { vm.cambiarConectarBanco(it) })
+                    }
                     Text(
                         "Plantillas fijas, categorías con presupuesto y medios de pago.",
                         style = MaterialTheme.typography.bodySmall

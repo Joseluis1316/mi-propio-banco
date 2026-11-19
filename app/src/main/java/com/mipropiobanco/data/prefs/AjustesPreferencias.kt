@@ -57,6 +57,15 @@ class AjustesPreferencias(context: Context) {
         _gastosSolos.value = valor
     }
 
+    /** Aportes, autopréstamos y cuotas de Mi banco también se anotan en Gastos/Ingresos. */
+    private val _conectarBanco = MutableStateFlow(prefs.getBoolean(CLAVE_CONECTAR_BANCO, true))
+    val conectarBanco: StateFlow<Boolean> = _conectarBanco.asStateFlow()
+
+    fun cambiarConectarBanco(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_CONECTAR_BANCO, valor).apply()
+        _conectarBanco.value = valor
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -105,6 +114,7 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_FECHA_INICIO = "fecha_inicio"
         const val CLAVE_URL_SCRIPT = "url_script"
         const val CLAVE_GASTOS_SOLOS = "gastos_solos"
+        const val CLAVE_CONECTAR_BANCO = "conectar_banco"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"

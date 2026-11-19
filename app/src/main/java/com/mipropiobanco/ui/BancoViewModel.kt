@@ -322,6 +322,9 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         }
     }
 
+    val conectarBanco: StateFlow<Boolean> = preferencias.conectarBanco
+    fun cambiarConectarBanco(valor: Boolean) = preferencias.cambiarConectarBanco(valor)
+
     val autoCorreos: StateFlow<Boolean> = preferencias.autoCorreos
     fun cambiarAutoCorreos(valor: Boolean) = preferencias.cambiarAutoCorreos(valor)
 
@@ -419,7 +422,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     }
 
     fun aplicarLimpieza() = ejecutar(
-        accion = { finanzas.aplicarLimpieza() },
+        accion = { guardarPunto("limpieza de duplicados"); finanzas.aplicarLimpieza() },
         mensaje = { (borrados, convertidos) ->
             "🧹 $borrados duplicados borrados · $convertidos retiros pasados a gasto"
         }
@@ -455,8 +458,8 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     }
 
     fun eliminarMovimiento(m: MovimientoEntity) = ejecutar(
-        accion = { finanzas.eliminarMovimiento(m) },
-        mensaje = { "Movimiento eliminado" }
+        accion = { guardarPunto("borrar ${Formato.cop(m.monto)} ${m.nota.take(20)}".trim()); finanzas.eliminarMovimiento(m) },
+        mensaje = { "Movimiento eliminado (↩️ Deshacer en Gastos)" }
     )
 
     fun guardarCategoria(id: Long?, nombre: String, tipo: TipoMovimiento, icono: String, presupuesto: Long) = ejecutar(
@@ -475,12 +478,12 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     )
 
     fun ajustarSaldos(saldosHoy: Map<Long, Long>, comoMovimiento: Boolean) = ejecutar(
-        accion = { finanzas.ajustarSaldos(saldosHoy, comoMovimiento) },
-        mensaje = { "💰 Saldos actualizados" }
+        accion = { guardarPunto("ajuste de saldos"); finanzas.ajustarSaldos(saldosHoy, comoMovimiento) },
+        mensaje = { "💰 Saldos actualizados (puedes deshacerlo en Gastos)" }
     )
 
     fun unirEnBancolombia() = ejecutar(
-        accion = { finanzas.unirEnBancolombia() },
+        accion = { guardarPunto("unir cuentas en Bancolombia"); finanzas.unirEnBancolombia() },
         mensaje = { u ->
             "🔗 ${u.movidos} movimientos pasados a Bancolombia" +
                 (if (u.ajustesBorrados > 0) " · ${u.ajustesBorrados} ajustes anteriores borrados" else "") +
@@ -630,7 +633,12 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     // ---------- Aportes ----------
 
     fun registrarAporte(fecha: Long, concepto: String, monto: Long) = ejecutar(
-        accion = { repo.registrarAporte(fecha, concepto, monto) },
+        accion = {
+            repo.registrarAporte(fecha, concepto, monto)
+            if (preferencias.conectarBanco.value) {
+                finanzas.anotarDeMiBanco(TipoMovimiento.GASTO, monto, fecha, "Aporte: $concepto", "Ahorro a Mi banco")
+            }
+        },
         mensaje = { "Aporte de ${Formato.cop(monto)} guardado en la bóveda" }
     )
 
@@ -664,13 +672,26 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         fechaDesembolso: Long,
         alCrear: (Long) -> Unit
     ) = ejecutar(
-        accion = { repo.crearPrestamo(concepto, monto, cuotas, periodicidad, tipo, tasaEA, tasaMoraEA, fechaDesembolso) },
+        accion = {
+            val id = repo.crearPrestamo(concepto, monto, cuotas, periodicidad, tipo, tasaEA, tasaMoraEA, fechaDesembolso)
+            if (preferencias.conectarBanco.value) {
+                finanzas.anotarDeMiBanco(TipoMovimiento.INGRESO, monto, fechaDesembolso, "Autopréstamo: $concepto", "Préstamo de Mi banco")
+            }
+            id
+        },
         mensaje = { "Autopréstamo aprobado: salieron ${Formato.cop(monto)} de la bóveda" },
         alTerminar = alCrear
     )
 
     fun pagarCuota(prestamoId: Long, fechaPago: Long) = ejecutar(
-        accion = { repo.registrarPagoCuota(prestamoId, fechaPago) },
+        accion = {
+            val r = repo.registrarPagoCuota(prestamoId, fechaPago)
+            if (preferencias.conectarBanco.value) {
+                val total = r.pago.capital + r.pago.interes + r.pago.mora
+                finanzas.anotarDeMiBanco(TipoMovimiento.GASTO, total, fechaPago, "Cuota ${r.pago.numeroCuota} a Mi banco", "Cuota a Mi banco")
+            }
+            r
+        },
         mensaje = { r ->
             val mora = if (r.pago.mora > 0L) " + mora ${Formato.cop(r.pago.mora)} (${r.pago.diasAtraso} días)" else ""
             if (r.prestamoLiquidado) {
@@ -749,6 +770,38 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "Pago eliminado" }
     )
 
+    // ---------- Deshacer (copia automática antes de cambios grandes) ----------
+
+    private val archivoDeshacer get() = File(app.filesDir, "deshacer.json")
+    private val archivoMotivo get() = File(app.filesDir, "deshacer.txt")
+
+    private val _puntoDeshacer = kotlinx.coroutines.flow.MutableStateFlow(
+        runCatching { if (archivoDeshacer.exists()) archivoMotivo.readText() else null }.getOrNull()
+    )
+    /** Qué se puede deshacer (texto), o null si no hay nada. */
+    val puntoDeshacer: StateFlow<String?> = _puntoDeshacer
+
+    /** Guarda una copia completa de los datos antes de un cambio que no se puede revertir a mano. */
+    private suspend fun guardarPunto(motivo: String) {
+        val json = respaldo.exportarJson()
+        withContext(Dispatchers.IO) {
+            archivoDeshacer.writeText(json)
+            archivoMotivo.writeText(motivo)
+        }
+        _puntoDeshacer.value = motivo
+    }
+
+    fun deshacer() = ejecutar(
+        accion = {
+            val texto = withContext(Dispatchers.IO) { archivoDeshacer.takeIf { it.exists() }?.readText() }
+                ?: throw IllegalStateException("No hay nada para deshacer")
+            respaldo.importarJson(texto)
+            withContext(Dispatchers.IO) { archivoDeshacer.delete(); archivoMotivo.delete() }
+            _puntoDeshacer.value = null
+        },
+        mensaje = { "↩️ Listo, se recuperó cómo estaba antes" }
+    )
+
     // ---------- Ajustes y respaldo ----------
 
     fun cambiarModoTema(modo: ModoTema) = preferencias.cambiarModoTema(modo)
@@ -764,7 +817,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     )
 
     fun importarJson(uri: Uri) = ejecutar(
-        accion = { respaldo.importarJson(leer(uri)) },
+        accion = { guardarPunto("importar respaldo"); respaldo.importarJson(leer(uri)) },
         mensaje = { it }
     )
 

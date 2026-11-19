@@ -272,8 +272,23 @@ class FinanzasRepository(private val db: BancoDatabase) {
     /** Medio por defecto para pagos registrados desde Deudas: Transferencia, o el primero. */
     suspend fun medioPorDefecto(): MedioPagoEntity? {
         val todos = medioDao.obtenerTodos()
-        return todos.firstOrNull { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("transferencia") }
+        fun n(t: String) = com.mipropiobanco.domain.Interprete.normalizar(t)
+        return todos.firstOrNull { n(it.nombre).contains("bancolombia") }
+            ?: todos.firstOrNull { n(it.nombre).contains("transferencia") }
             ?: todos.firstOrNull()
+    }
+
+    /** Anota en Gastos/Ingresos un movimiento que viene de Mi banco (aporte, autopréstamo, cuota). */
+    suspend fun anotarDeMiBanco(tipo: TipoMovimiento, monto: Long, fecha: Long, nota: String, categoria: String) {
+        if (monto <= 0L) return
+        val medio = medioPorDefecto() ?: return
+        movimientoDao.insertar(
+            MovimientoEntity(
+                tipo = tipo.name, monto = monto,
+                categoriaId = categoriaPorNombre(categoria, tipo, "🏦"),
+                medioId = medio.id, fecha = fecha, nota = nota.take(80)
+            )
+        )
     }
 
     suspend fun fotoEnUso(ruta: String): Boolean = movimientoDao.obtenerTodos().any { it.foto == ruta }

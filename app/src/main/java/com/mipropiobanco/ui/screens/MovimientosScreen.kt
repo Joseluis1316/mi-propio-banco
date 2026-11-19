@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -122,7 +123,9 @@ fun SelectorMes(mes: YearMonth, alCambiar: (YearMonth) -> Unit) {
     }
 }
 
-private enum class FiltroMov(val etiqueta: String) { TODOS("Todos"), GASTOS("Gastos"), INGRESOS("Ingresos") }
+private enum class FiltroMov(val etiqueta: String) {
+    TODOS("Todos"), GASTOS("Gastos"), INGRESOS("Ingresos"), POR_CLASIFICAR("🏷️ Por clasificar")
+}
 
 @Composable
 fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: () -> Unit, alBandeja: () -> Unit = {}) {
@@ -133,6 +136,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val deudas by vm.deudas.collectAsStateWithLifecycle()
     val deudasActivas = deudas.filter { !it.pagada }
     val bandeja by vm.bandeja.collectAsStateWithLifecycle()
+    val puntoDeshacer by vm.puntoDeshacer.collectAsStateWithLifecycle()
 
     var mesTexto by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
     val mes = YearMonth.parse(mesTexto)
@@ -221,6 +225,9 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
         .map { AvancePresupuesto(it, resumen.gastoPorCategoria[it.id] ?: 0L) }
         .filter { it.limite > 0L || it.gastado > 0L }
         .sortedByDescending { if (it.limite > 0L) it.fraccion else 0f }
+    val catMapPorClasificar = categorias
+        .filter { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("por clasificar") }
+        .map { it.id }.toSet()
     val delMes = movimientos
         .filter { YearMonth.from(Formato.aLocalDate(it.fecha)) == mes }
         .filter {
@@ -228,6 +235,7 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 FiltroMov.TODOS -> true
                 FiltroMov.GASTOS -> it.tipo == TipoMovimiento.GASTO.name
                 FiltroMov.INGRESOS -> it.tipo == TipoMovimiento.INGRESO.name
+                FiltroMov.POR_CLASIFICAR -> catMapPorClasificar.contains(it.categoriaId)
             }
         }
     val porDia = delMes.groupBy { Formato.aLocalDate(it.fecha) }.toSortedMap(compareByDescending { it })
@@ -262,6 +270,13 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                     item {
                         androidx.compose.material3.OutlinedButton(onClick = alBandeja, modifier = Modifier.fillMaxWidth()) {
                             Text("📥 Correos del banco (buscar / releer)")
+                        }
+                    }
+                }
+                puntoDeshacer?.let { motivo ->
+                    item {
+                        androidx.compose.material3.OutlinedButton(onClick = { vm.deshacer() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("↩️ Deshacer: $motivo")
                         }
                     }
                 }
@@ -339,7 +354,10 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                 }
 
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    ) {
                         FiltroMov.entries.forEach { f ->
                             FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text(f.etiqueta) })
                         }
