@@ -38,6 +38,16 @@ class AjustesPreferencias(context: Context) {
         _fechaInicio.value = valor
     }
 
+    /** Enlace de la app web del script de Gmail, para pedirle que revise los correos ya. */
+    private val _urlScript = MutableStateFlow(prefs.getString(CLAVE_URL_SCRIPT, "") ?: "")
+    val urlScript: StateFlow<String> = _urlScript.asStateFlow()
+
+    fun cambiarUrlScript(valor: String) {
+        val v = valor.trim()
+        prefs.edit().putString(CLAVE_URL_SCRIPT, v).apply()
+        _urlScript.value = v
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -84,6 +94,7 @@ class AjustesPreferencias(context: Context) {
     private companion object {
         const val CLAVE_TEMA = "modo_tema"
         const val CLAVE_FECHA_INICIO = "fecha_inicio"
+        const val CLAVE_URL_SCRIPT = "url_script"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"

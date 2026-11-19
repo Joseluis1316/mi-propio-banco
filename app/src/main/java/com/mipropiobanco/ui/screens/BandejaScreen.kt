@@ -48,6 +48,7 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
     val deudas by vm.deudas.collectAsStateWithLifecycle()
     val correo by vm.correo.collectAsStateWithLifecycle()
     var propuesta by remember { mutableStateOf<Propuesta?>(null) }
+    val buscando by vm.buscandoCorreos.collectAsStateWithLifecycle()
     var limpieza by remember { mutableStateOf<com.mipropiobanco.data.repository.FinanzasRepository.Limpieza?>(null) }
 
     Column(Modifier.fillMaxSize()) {
@@ -57,6 +58,19 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (correo != null) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        FilledTonalButton(
+                            onClick = { vm.buscarCorreosAhora() },
+                            enabled = !buscando,
+                            modifier = Modifier.weight(1f)
+                        ) { Text(if (buscando) "Buscando…" else "🔄 Buscar correos ahora") }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { vm.buscarCorreosAhora(todos = true) },
+                            enabled = !buscando
+                        ) { Text("Releer todos") }
+                    }
+                }
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Row(

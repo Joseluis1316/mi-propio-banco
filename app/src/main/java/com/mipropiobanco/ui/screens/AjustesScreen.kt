@@ -142,6 +142,21 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                     InstruccionesGmail(vm.uidNube) {
                         vm.uidNube?.let { portapapeles.setText(androidx.compose.ui.text.AnnotatedString(it)) }
                     }
+                    val urlScript by vm.urlScript.collectAsStateWithLifecycle()
+                    var url by remember(urlScript) { mutableStateOf(urlScript) }
+                    androidx.compose.material3.OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        label = { Text("Enlace del script (para 🔄 Buscar correos ahora)") },
+                        placeholder = { Text("https://script.google.com/macros/s/…/exec") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (url.trim() != urlScript) {
+                        OutlinedButton(onClick = { vm.cambiarUrlScript(url) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Guardar enlace")
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Registrar solos los conocidos")

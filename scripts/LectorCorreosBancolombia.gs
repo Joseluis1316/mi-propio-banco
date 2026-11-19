@@ -1,15 +1,3 @@
-/**
- * Mi Propio Banco · Lector de correos de Bancolombia
- *
- * Revisa cada 15 minutos los correos con la etiqueta MiBanco y los envía a tu
- * bandeja en Firebase. La app los interpreta y te los muestra (o los registra
- * sola si ya conoce esa cuenta o comercio).
- *
- * Configuración (una sola vez):
- *  1. Reemplaza TU_CODIGO por el código que muestra la app en Ajustes › Correos de Bancolombia.
- *  2. Verifica PROYECTO: es el "project_id" de tu archivo app/google-services.json.
- *  3. Menú Ejecutar › función "instalar" y acepta los permisos.
- */
 const PROYECTO = 'mi-propio-banco-4b941';
 const UID = 'TU_CODIGO';
 const ETIQUETA = 'MiBanco';
@@ -21,21 +9,36 @@ function instalar() {
   revisarCorreos();
 }
 
+/** La app llama aquí con el botón "🔄 Buscar correos ahora". */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.uid !== UID) return ContentService.createTextOutput('NO');
+  const n = p.todo === '1' ? reenviarTodo() : revisarCorreos();
+  return ContentService.createTextOutput('OK ' + n + ' correos enviados');
+}
+
 function revisarCorreos() {
-  if (UID === 'TU_CODIGO') throw new Error('Falta poner tu código de usuario en UID');
-  if (!GmailApp.getUserLabelByName(ETIQUETA)) return;
+  if (!GmailApp.getUserLabelByName(ETIQUETA)) return 0;
   const leidos = GmailApp.getUserLabelByName(ETIQUETA_LEIDOS) || GmailApp.createLabel(ETIQUETA_LEIDOS);
-  const hilos = GmailApp.search('label:' + ETIQUETA + ' -label:' + ETIQUETA_LEIDOS + ' newer_than:60d', 0, 50);
+  const hilos = GmailApp.search('label:' + ETIQUETA + ' -label:' + ETIQUETA_LEIDOS + ' newer_than:60d', 0, 100);
+  let enviados = 0;
   hilos.forEach(function (hilo) {
     let todoBien = true;
     hilo.getMessages().forEach(function (mensaje) {
-      if (!enviar(mensaje.getId(), mensaje.getPlainBody(), mensaje.getDate())) todoBien = false;
+      if (enviar(mensaje.getId(), mensaje.getPlainBody(), mensaje.getDate())) enviados++;
+      else todoBien = false;
     });
     if (todoBien) hilo.addLabel(leidos);
   });
+  return enviados;
 }
 
-/** Quita logos y enlaces ([http://...]) para que llegue solo el texto de la alerta. */
+function reenviarTodo() {
+  const leidos = GmailApp.getUserLabelByName(ETIQUETA_LEIDOS);
+  if (leidos) GmailApp.search('label:' + ETIQUETA_LEIDOS).forEach(function (h) { h.removeLabel(leidos); });
+  return revisarCorreos();
+}
+
 function limpiar(texto) {
   return String(texto)
     .replace(/\[[^\]]*\]/g, ' ')

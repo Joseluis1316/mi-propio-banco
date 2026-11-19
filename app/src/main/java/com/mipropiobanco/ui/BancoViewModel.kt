@@ -259,6 +259,60 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         return propuesta to (regla != null)
     }
 
+    val urlScript: StateFlow<String> = preferencias.urlScript
+    fun cambiarUrlScript(valor: String) = preferencias.cambiarUrlScript(valor)
+
+    private val _buscandoCorreos = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val buscandoCorreos: StateFlow<Boolean> = _buscandoCorreos
+
+    /**
+     * Le pide al script de Gmail que revise los correos ahora (sin esperar los 15 minutos).
+     * todos = true vuelve a enviar los correos de los últimos 60 días.
+     */
+    fun buscarCorreosAhora(todos: Boolean = false) {
+        val base = preferencias.urlScript.value
+        if (base.isBlank()) {
+            viewModelScope.launch { _mensajes.emit("Primero pega el enlace del script en Ajustes › Correos de Bancolombia") }
+            return
+        }
+        if (_buscandoCorreos.value) return
+        _buscandoCorreos.value = true
+        viewModelScope.launch {
+            try {
+                val respuesta = withContext(Dispatchers.IO) {
+                    val sep = if (base.contains("?")) "&" else "?"
+                    val url = java.net.URL(base + sep + "uid=" + (nube.uid ?: "") + if (todos) "&todo=1" else "")
+                    val con = url.openConnection() as java.net.HttpURLConnection
+                    con.instanceFollowRedirects = true
+                    con.connectTimeout = 20_000
+                    con.readTimeout = 90_000
+                    try {
+                        val codigo = con.responseCode
+                        val texto = (if (codigo < 400) con.inputStream else con.errorStream)
+                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        codigo to texto
+                    } finally {
+                        con.disconnect()
+                    }
+                }
+                val (codigo, texto) = respuesta
+                _mensajes.emit(
+                    when {
+                        codigo < 300 && texto.startsWith("OK") -> "🔄 Correos revisados: ${texto.removePrefix("OK").trim().ifBlank { "listo" }}"
+                        codigo < 300 -> "El enlace no es el del script. Revisa que copiaste la URL de la implementación (termina en /exec)."
+                        else -> "No se pudo revisar los correos (error $codigo)"
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _mensajes.emit("Sin conexión con el script: ${e.message ?: "revisa tu internet"}")
+            } finally {
+                _buscandoCorreos.value = false
+            }
+        }
+    }
+
     val autoCorreos: StateFlow<Boolean> = preferencias.autoCorreos
     fun cambiarAutoCorreos(valor: Boolean) = preferencias.cambiarAutoCorreos(valor)
 
