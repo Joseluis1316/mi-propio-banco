@@ -78,7 +78,7 @@ class BancoRepository(private val db: BancoDatabase) {
     suspend fun eliminarAporte(aporte: AporteEntity) = db.withTransaction {
         val r = resumenActual()
         check(r.disponible >= aporte.monto) {
-            "No se puede eliminar: parte de ese dinero está prestado. Disponible: ${Formato.cop(r.disponible)}"
+            "No se puede eliminar: parte de ese dinero está prestado. Disponible: ${Formato.copReal(r.disponible)}"
         }
         aporteDao.eliminar(aporte)
     }
@@ -114,7 +114,7 @@ class BancoRepository(private val db: BancoDatabase) {
         require(tasaMoraEA in 0.0..300.0) { "La tasa de mora debe estar entre 0% y 300%" }
         val r = resumenActual()
         check(monto <= r.disponible) {
-            "Fondos insuficientes: en la bóveda hay ${Formato.cop(r.disponible)}"
+            "Fondos insuficientes: en la bóveda hay ${Formato.copReal(r.disponible)}"
         }
         val tasaPeriodo = Tasas.periodoDesdeEA(tasaEA, periodicidad)
         prestamoDao.insertar(

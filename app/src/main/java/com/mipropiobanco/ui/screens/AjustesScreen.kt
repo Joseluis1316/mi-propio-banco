@@ -99,6 +99,55 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                val bloqueo by vm.bloqueo.collectAsStateWithLifecycle()
+                val ocultar by vm.ocultarSaldos.collectAsStateWithLifecycle()
+                val respaldos by vm.respaldosAuto.collectAsStateWithLifecycle()
+                var restaurando by remember { mutableStateOf<String?>(null) }
+                Seccion("🔒 Seguridad y privacidad") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Bloquear con huella o PIN")
+                            Text(
+                                "Al abrir la app y después de 1 minuto en segundo plano.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = bloqueo, onCheckedChange = { vm.cambiarBloqueo(it) })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Modo privado")
+                            Text(
+                                "Oculta los montos ($ •••••). También con el 👁 en Inicio.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = ocultar, onCheckedChange = { vm.cambiarOcultarSaldos(it) })
+                    }
+                    Text("Copias automáticas (una por día, se guardan 7)", fontWeight = FontWeight.Medium)
+                    if (respaldos.isEmpty()) {
+                        Text("Aún no hay copias. Se crea una cada día al abrir la app.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    respaldos.forEach { dia ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("📦 $dia", modifier = Modifier.weight(1f))
+                            androidx.compose.material3.TextButton(onClick = { restaurando = dia }) { Text("Restaurar") }
+                        }
+                    }
+                }
+                restaurando?.let { dia ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { restaurando = null },
+                        title = { Text("Restaurar copia del $dia") },
+                        text = { Text("Tus datos vuelven a como estaban ese día. Lo de hoy se guarda antes, y puedes deshacerlo desde Gastos.") },
+                        confirmButton = {
+                            FilledTonalButton(onClick = { vm.restaurarRespaldoAuto(dia); restaurando = null }) { Text("Restaurar") }
+                        },
+                        dismissButton = { androidx.compose.material3.TextButton(onClick = { restaurando = null }) { Text("Cancelar") } }
+                    )
+                }
+            }
+            item {
                 Seccion("Cuenta y nube") {
                     val cuenta = correo
                     if (cuenta != null) {

@@ -1,5 +1,7 @@
 package com.mipropiobanco.util
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.time.Instant
@@ -26,8 +28,18 @@ object Formato {
 
     fun miles(valor: Long): String = synchronized(formatoMiles) { formatoMiles.format(valor) }
 
+    /** Modo privado: los montos se muestran como "$ •••••" (se activa con el ojo en Inicio). */
+    var ocultar by androidx.compose.runtime.mutableStateOf(false)
+
     /** 1234567 → "$1.234.567"; negativos → "-$1.234.567". */
-    fun cop(valor: Long): String =
+    fun cop(valor: Long): String = when {
+        ocultar -> "$ •••••"
+        valor < 0L -> "-$" + miles(-valor)
+        else -> "$" + miles(valor)
+    }
+
+    /** Igual que [cop] pero nunca oculta (para archivos exportados y mensajes de error). */
+    fun copReal(valor: Long): String =
         if (valor < 0L) "-$" + miles(-valor) else "$" + miles(valor)
 
     /** 28.34 → "28,34" (para precargar campos editables). */

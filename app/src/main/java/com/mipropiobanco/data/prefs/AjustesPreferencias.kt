@@ -66,6 +66,28 @@ class AjustesPreferencias(context: Context) {
         _conectarBanco.value = valor
     }
 
+    /** Pedir huella / PIN del celular al abrir la app. */
+    private val _bloqueo = MutableStateFlow(prefs.getBoolean(CLAVE_BLOQUEO, false))
+    val bloqueo: StateFlow<Boolean> = _bloqueo.asStateFlow()
+
+    fun cambiarBloqueo(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_BLOQUEO, valor).apply()
+        _bloqueo.value = valor
+    }
+
+    /** Ocultar los montos (modo privado). */
+    private val _ocultarSaldos = MutableStateFlow(prefs.getBoolean(CLAVE_OCULTAR, false))
+    val ocultarSaldos: StateFlow<Boolean> = _ocultarSaldos.asStateFlow()
+
+    fun cambiarOcultarSaldos(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_OCULTAR, valor).apply()
+        _ocultarSaldos.value = valor
+    }
+
+    /** Fecha (yyyy-MM-dd) del último respaldo automático. */
+    fun ultimoRespaldoAuto(): String = prefs.getString(CLAVE_RESPALDO_AUTO, "") ?: ""
+    fun marcarRespaldoAuto(dia: String) = prefs.edit().putString(CLAVE_RESPALDO_AUTO, dia).apply()
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -115,6 +137,9 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_URL_SCRIPT = "url_script"
         const val CLAVE_GASTOS_SOLOS = "gastos_solos"
         const val CLAVE_CONECTAR_BANCO = "conectar_banco"
+        const val CLAVE_BLOQUEO = "bloqueo"
+        const val CLAVE_OCULTAR = "ocultar_saldos"
+        const val CLAVE_RESPALDO_AUTO = "respaldo_auto"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"

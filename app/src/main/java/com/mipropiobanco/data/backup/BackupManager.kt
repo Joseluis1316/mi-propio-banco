@@ -383,7 +383,7 @@ class BackupManager(
         deudas.values.forEach { d ->
             sb.fila(
                 "DEUDA", Formato.fechaIso(d.fechaRegistro),
-                "${d.acreedor} (mínimo ${Formato.cop(d.pagoMinimo)}, día ${d.diaPago})",
+                "${d.acreedor} (mínimo ${Formato.copReal(d.pagoMinimo)}, día ${d.diaPago})",
                 d.saldoInicial, "", "", "", "", d.id, ""
             )
         }

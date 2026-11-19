@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RemoveCircle
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -118,7 +120,12 @@ fun DashboardScreen(
         }
 
         // ---- Tarjeta principal ----
-        item { TarjetaPrincipal(enCuentas, resumen.capitalTotal, debo, patrimonio, alVerMovimientos) }
+        item {
+            val ocultar by vm.ocultarSaldos.collectAsStateWithLifecycle()
+            TarjetaPrincipal(enCuentas, resumen.capitalTotal, debo, patrimonio, alVerMovimientos, ocultar) {
+                vm.cambiarOcultarSaldos(!ocultar)
+            }
+        }
 
         // ---- Acciones rápidas ----
         item {
@@ -306,14 +313,31 @@ private fun Titulo(texto: String) {
 }
 
 @Composable
-private fun TarjetaPrincipal(enCuentas: Long, miBanco: Long, debo: Long, patrimonio: Long, alAbrir: () -> Unit) {
+private fun TarjetaPrincipal(
+    enCuentas: Long, miBanco: Long, debo: Long, patrimonio: Long, alAbrir: () -> Unit,
+    ocultar: Boolean, alOjo: () -> Unit
+) {
     val degradado = Brush.linearGradient(listOf(Color(0xFF0B8F5E), Color(0xFF0A5C8A), Color(0xFF1E2A78)))
     Card(onClick = alAbrir, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(
             Modifier.fillMaxWidth().background(degradado).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("Lo que tengo hoy", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Lo que tengo hoy",
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = alOjo) {
+                    Icon(
+                        if (ocultar) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = "Mostrar u ocultar montos",
+                        tint = Color.White
+                    )
+                }
+            }
             Text(
                 Formato.cop(enCuentas),
                 color = Color.White,

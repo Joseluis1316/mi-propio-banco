@@ -802,6 +802,60 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { "↩️ Listo, se recuperó cómo estaba antes" }
     )
 
+    // ---------- Seguridad y privacidad ----------
+
+    val bloqueo: StateFlow<Boolean> = preferencias.bloqueo
+    fun cambiarBloqueo(valor: Boolean) = preferencias.cambiarBloqueo(valor)
+
+    val ocultarSaldos: StateFlow<Boolean> = preferencias.ocultarSaldos
+    fun cambiarOcultarSaldos(valor: Boolean) {
+        preferencias.cambiarOcultarSaldos(valor)
+        Formato.ocultar = valor
+    }
+
+    // ---------- Respaldos automáticos diarios (en el celular, se guardan los últimos 7) ----------
+
+    private val carpetaRespaldos get() = File(app.filesDir, "respaldos").apply { mkdirs() }
+
+    private val _respaldosAuto = kotlinx.coroutines.flow.MutableStateFlow<List<String>>(emptyList())
+    /** Nombres de días con copia automática, del más reciente al más viejo (yyyy-MM-dd). */
+    val respaldosAuto: StateFlow<List<String>> = _respaldosAuto
+
+    private fun listarRespaldos() {
+        _respaldosAuto.value = (carpetaRespaldos.listFiles()?.toList() ?: emptyList())
+            .filter { it.name.startsWith("auto_") && it.name.endsWith(".json") }
+            .map { it.name.removePrefix("auto_").removeSuffix(".json") }
+            .sortedDescending()
+    }
+
+    private suspend fun respaldoDiario() {
+        val hoy = java.time.LocalDate.now().toString()
+        if (preferencias.ultimoRespaldoAuto() == hoy) { listarRespaldos(); return }
+        if (respaldo.estaVacio()) { listarRespaldos(); return }
+        val json = respaldo.exportarJson()
+        withContext(Dispatchers.IO) {
+            File(carpetaRespaldos, "auto_$hoy.json").writeText(json)
+            (carpetaRespaldos.listFiles()?.toList() ?: emptyList())
+                .filter { it.name.startsWith("auto_") }
+                .sortedByDescending { it.name }
+                .drop(7)
+                .forEach { it.delete() }
+        }
+        preferencias.marcarRespaldoAuto(hoy)
+        listarRespaldos()
+    }
+
+    fun restaurarRespaldoAuto(dia: String) = ejecutar(
+        accion = {
+            val archivo = File(carpetaRespaldos, "auto_$dia.json")
+            val texto = withContext(Dispatchers.IO) { archivo.takeIf { it.exists() }?.readText() }
+                ?: throw IllegalStateException("Esa copia ya no existe")
+            guardarPunto("restaurar copia del $dia")
+            respaldo.importarJson(texto)
+        },
+        mensaje = { "Se restauró la copia del $dia (puedes deshacerlo en Gastos)" }
+    )
+
     // ---------- Ajustes y respaldo ----------
 
     fun cambiarModoTema(modo: ModoTema) = preferencias.cambiarModoTema(modo)
@@ -822,6 +876,10 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     )
 
     init {
+        Formato.ocultar = preferencias.ocultarSaldos.value
+        viewModelScope.launch {
+            try { respaldoDiario() } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+        }
         // Correos del banco ya conocidos: se registran solos en cuanto llegan.
         viewModelScope.launch { bandeja.collect { registrarCorreosConocidos(it) } }
         // Al abrir la app se registran solas las plantillas automáticas que ya vencieron.

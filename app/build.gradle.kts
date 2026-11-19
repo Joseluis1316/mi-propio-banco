@@ -88,4 +88,6 @@ dependencies {
 
     // Lectura de recibos con IA en el celular (gratis y sin internet).
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
