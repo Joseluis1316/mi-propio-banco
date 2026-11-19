@@ -1077,7 +1077,7 @@ private fun DialogoSaldos(
 }
 
 
-/** Elige desde qué fecha llevar las cuentas; lo anterior se borra sin cambiar lo que tienes hoy. */
+/** Elige desde qué fecha se aceptan los correos del banco. No borra movimientos. */
 @Composable
 private fun DialogoInicio(
     movimientos: List<com.mipropiobanco.data.local.MovimientoEntity>,
@@ -1087,22 +1087,19 @@ private fun DialogoInicio(
     var fecha by rememberSaveable {
         mutableStateOf(Formato.aMillis(java.time.LocalDate.now().withDayOfMonth(1)))
     }
-    val aBorrar = movimientos.filter { it.fecha < fecha || it.nota.startsWith("Ajuste:") }
     AlertDialog(
         onDismissRequest = alCerrar,
-        title = { Text("📅 Llevar cuentas desde…") },
+        title = { Text("📅 Correos desde…") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 com.mipropiobanco.ui.components.SelectorFecha("Desde", fecha, { fecha = it })
                 Text(
-                    "Se borrarán ${aBorrar.size} movimientos anteriores a esa fecha (y los ajustes de saldo). " +
-                        "Lo que tienes hoy en cada cuenta no cambia, y los correos de antes de esa fecha se ignoran.",
+                    "Los correos del banco anteriores a esta fecha se ignoran. Tus movimientos guardados NO se borran.",
                     style = MaterialTheme.typography.bodySmall
                 )
-                Text("Borrar no se puede deshacer.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { FilledTonalButton(onClick = { alConfirmar(fecha) }) { Text("Empezar desde aquí") } },
+        confirmButton = { FilledTonalButton(onClick = { alConfirmar(fecha) }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
     )
 }

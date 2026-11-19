@@ -492,11 +492,12 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
 
     fun empezarDesde(inicio: Long) = ejecutar(
         accion = {
-            val n = finanzas.empezarDesde(inicio)
+            // Ya no borra nada: solo decide desde qué fecha se aceptan los correos.
             preferencias.cambiarFechaInicio(inicio)
-            n
+            correosProcesados.clear()
+            registrarCorreosConocidos(bandeja.value)
         },
-        mensaje = { n -> "📅 Cuentas desde el ${Formato.fecha(inicio)} · $n movimientos anteriores borrados" }
+        mensaje = { "📅 Correos desde el ${Formato.fecha(inicio)}. Tus movimientos no se tocaron." }
     )
 
     fun eliminarMedio(m: MedioPagoEntity) = ejecutar(
