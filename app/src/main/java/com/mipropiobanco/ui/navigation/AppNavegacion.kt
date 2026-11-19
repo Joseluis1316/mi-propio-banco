@@ -41,6 +41,7 @@ import com.mipropiobanco.ui.screens.DetalleDeudaScreen
 import com.mipropiobanco.ui.screens.DetallePrestamoScreen
 import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.LoginScreen
+import com.mipropiobanco.ui.screens.MetasScreen
 import com.mipropiobanco.ui.screens.MovimientosScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
 

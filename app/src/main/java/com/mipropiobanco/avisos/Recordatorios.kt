@@ -42,10 +42,11 @@ class Recordatorios(contexto: Context, parametros: WorkerParameters) : Coroutine
             app.repositorio.deudas.first().forEach { d ->
                 val e = d.estado(ahora) ?: return@forEach
                 val dias = ChronoUnit.DAYS.between(hoy, e.vence)
-                when {
-                    e.atrasado -> avisos += "⚠️ ${d.deuda.acreedor}: pago atrasado ${e.diasAtraso} días"
-                    dias in 0L..2L -> avisos += "📅 ${d.deuda.acreedor}: mínimo ${Formato.copReal(d.deuda.pagoMinimo)} " +
-                        if (dias == 0L) "vence hoy" else "vence en $dias días"
+                if (e.atrasado) {
+                    avisos.add("⚠️ ${d.deuda.acreedor}: pago atrasado ${e.diasAtraso} días")
+                } else if (dias in 0L..2L) {
+                    val cuando = if (dias == 0L) "vence hoy" else "vence en $dias días"
+                    avisos.add("📅 ${d.deuda.acreedor}: mínimo ${Formato.copReal(d.deuda.pagoMinimo)} $cuando")
                 }
             }
         }
@@ -53,10 +54,11 @@ class Recordatorios(contexto: Context, parametros: WorkerParameters) : Coroutine
             app.repositorio.prestamosConPagos.first().filter { !it.prestamo.pagado }.forEach { p ->
                 val e = p.estado(ahora) ?: return@forEach
                 val dias = ChronoUnit.DAYS.between(hoy, e.vence)
-                when {
-                    e.diasAtraso > 0L -> avisos += "⚠️ Cuota de ${p.prestamo.concepto} atrasada ${e.diasAtraso} días"
-                    dias in 0L..2L -> avisos += "🏦 Cuota de ${p.prestamo.concepto}: ${Formato.copReal(e.totalAPagar)} " +
-                        if (dias == 0L) "vence hoy" else "vence en $dias días"
+                if (e.diasAtraso > 0L) {
+                    avisos.add("⚠️ Cuota de ${p.prestamo.concepto} atrasada ${e.diasAtraso} días")
+                } else if (dias in 0L..2L) {
+                    val cuando = if (dias == 0L) "vence hoy" else "vence en $dias días"
+                    avisos.add("🏦 Cuota de ${p.prestamo.concepto}: ${Formato.copReal(e.totalAPagar)} $cuando")
                 }
             }
         }
@@ -67,8 +69,10 @@ class Recordatorios(contexto: Context, parametros: WorkerParameters) : Coroutine
                 it.tipo == TipoMovimiento.GASTO.name && it.presupuestoMensual > 0L &&
                     (mes.gastoPorCategoria[it.id] ?: 0L) > it.presupuestoMensual
             }.forEach { c ->
-                avisos += "💸 Te pasaste en ${c.icono} ${c.nombre}: ${Formato.copReal(mes.gastoPorCategoria[c.id] ?: 0L)} " +
-                    "de ${Formato.copReal(c.presupuestoMensual)}"
+                avisos.add(
+                    "💸 Te pasaste en ${c.icono} ${c.nombre}: ${Formato.copReal(mes.gastoPorCategoria[c.id] ?: 0L)} " +
+                        "de ${Formato.copReal(c.presupuestoMensual)}"
+                )
             }
         }
 
