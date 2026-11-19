@@ -297,12 +297,14 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                     continue
                 }
                 // Ya registrado (mismo tipo y monto, mismo día o el siguiente): se descarta solo.
-                if (InterpreteCorreo.buscarDuplicado(m, existentes, dias = 1) != null) {
+                if (InterpreteCorreo.buscarDuplicado(m, existentes, dias = 1, exacto = true) != null) {
                     correosProcesados.add(c.id)
                     runCatching { nube.quitarDeBandeja(c.id) }.onSuccess { descartados++ }
                     continue
                 }
                 if (!preferencias.autoCorreos.value) continue
+                // Parecido a algo ya anotado (mismo monto, días cercanos): que lo revises tú.
+                if (InterpreteCorreo.buscarDuplicado(m, existentes) != null) continue
                 val (p, conocido) = construirPropuesta(m)
                 val medio = p.medioId ?: continue
                 val listo = conocido && (p.tipo == TipoMovimiento.TRASLADO && p.medioDestinoId != null ||

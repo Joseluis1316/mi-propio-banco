@@ -50,6 +50,16 @@ object InterpreteCorreo {
         return porDefecto
     }
 
+    /** Lo que sigue al monto ("a NEQUI desde producto *3888. 14/11...") resumido para la nota. */
+    private fun describir(resto: String): String {
+        val t = resto.replace(Regex("\\d{1,2}/\\d{1,2}/\\d{2,4}.*"), "")
+            .replace(Regex("(?i)desde (tu )?(producto|cuenta).*"), "")
+            .replace(Regex("(?i)\\s(en|a) tu (cuenta|producto).*"), "")
+            .replace(Regex("(?i)\\s+el\\s*$"), "")
+            .replace(Regex("(?i)^\\s*(a|en|por|de|con|para)\\s+"), "")
+        return limpiar(t).take(40).ifBlank { "Bancolombia" }
+    }
+
     private fun limpiar(nombre: String): String =
         nombre.trim().trimEnd('.', ',').replace(Regex("\\s+"), " ")
 
@@ -129,6 +139,15 @@ object InterpreteCorreo {
         Regex("transferiste $DINERO (?:por .+? )?(?:a|para) (.+?)(?: desde | el |,|$)", op).find(f)?.let {
             return crear(TipoMovimiento.GASTO, it.groupValues[1], it.groupValues[2], "Transferencia a ${limpiar(it.groupValues[2])}")
         }
+        // Formatos que no conocemos: si hay verbo de salida o entrada y un monto, no se pierde el movimiento.
+        Regex("(pagaste|transferiste|compraste|enviaste|realizaste|hiciste|debitamos)[^$]{0,80}?$DINERO(.{0,70})", op).find(f)?.let {
+            val detalle = describir(it.groupValues[3])
+            return crear(TipoMovimiento.GASTO, it.groupValues[2], detalle, "${it.groupValues[1].replaceFirstChar { c -> c.uppercase() }} ${detalle}".trim())
+        }
+        Regex("(recibiste|te abonaron|abonamos|te llego|te llegó)[^$]{0,80}?$DINERO(.{0,70})", op).find(f)?.let {
+            val detalle = describir(it.groupValues[3])
+            return crear(TipoMovimiento.INGRESO, it.groupValues[2], detalle, "Recibiste ${detalle}".trim())
+        }
         return null
     }
 
@@ -136,18 +155,24 @@ object InterpreteCorreo {
     fun buscarDuplicado(
         m: MovimientoCorreo,
         movimientos: List<com.mipropiobanco.data.local.MovimientoEntity>,
-        dias: Long = 3
+        dias: Long = 3,
+        /** true = solo si es el mismo movimiento ya guardado desde el correo (misma nota). */
+        exacto: Boolean = false
     ): String? {
         fun cerca(fecha: Long, dias: Long) = kotlin.math.abs(
             java.time.temporal.ChronoUnit.DAYS.between(com.mipropiobanco.util.Formato.aLocalDate(fecha), m.fecha)
         ) <= dias
         // Un retiro pudo quedar guardado antes como traslado a efectivo.
         val tipos = if (m.esRetiro) setOf(TipoMovimiento.GASTO.name, TipoMovimiento.TRASLADO.name) else setOf(m.tipo.name)
-        movimientos.firstOrNull { it.monto == m.monto && it.tipo in tipos && cerca(it.fecha, dias) }?.let {
+        val nota = Interprete.normalizar(m.resumen.take(80)).trim()
+        movimientos.firstOrNull {
+            it.monto == m.monto && it.tipo in tipos && cerca(it.fecha, dias) &&
+                (!exacto || Interprete.normalizar(it.nota).trim() == nota)
+        }?.let {
             return "Ya registraste ${com.mipropiobanco.util.Formato.cop(it.monto)} el ${com.mipropiobanco.util.Formato.fecha(it.fecha)}" +
                 if (it.nota.isNotBlank()) " («${it.nota.take(30)}»)" else ""
         }
-        if (m.esNomina) {
+        if (m.esNomina && !exacto) {
             // Desprendible ya cargado: devengos − deducciones de esos días = lo que llegó al banco.
             val deNomina = movimientos.filter { it.nota.contains("nómina") && cerca(it.fecha, dias * 2) }
             val neto = deNomina.sumOf { if (it.tipo == TipoMovimiento.INGRESO.name) it.monto else -it.monto }
