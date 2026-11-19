@@ -104,6 +104,7 @@ class BackupManager(
                         .put("tasaEA", d.tasaEA)
                         .put("diaPago", d.diaPago)
                         .put("fechaRegistro", d.fechaRegistro)
+                        .put("proximoPago", d.proximoPago)
                 )
             }
         })
@@ -283,7 +284,8 @@ class BackupManager(
                 pagoMinimo = it.getLong("pagoMinimo"),
                 tasaEA = it.getDouble("tasaEA"),
                 diaPago = it.getInt("diaPago"),
-                fechaRegistro = it.getLong("fechaRegistro")
+                fechaRegistro = it.getLong("fechaRegistro"),
+                proximoPago = it.optLong("proximoPago", 0L)
             )
         }.orEmpty()
         val abonos = raiz.optJSONArray("abonosDeuda")?.objetos()?.map {

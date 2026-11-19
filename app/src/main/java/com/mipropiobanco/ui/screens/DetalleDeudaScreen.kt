@@ -125,7 +125,7 @@ fun DetalleDeudaScreen(vm: BancoViewModel, deudaId: Long, alVolver: () -> Unit) 
                         FilaResumen("Pago mínimo", Formato.cop(d.pagoMinimo))
                         FilaResumen("Día de pago", "Día ${d.diaPago} de cada mes")
                         FilaResumen("Tasa", if (d.tasaEA > 0.0) "${Formato.tasa(d.tasaEA)} E.A. (${Formato.tasa(item.tasaMensual)} mes)" else "Sin intereses")
-                        plan.mesLiquidacion[deudaId]?.let { FilaResumen("La liquidas en", mesDelPlan(it)) }
+                        plan.mesLiquidacion[deudaId]?.let { FilaResumen("La liquidas en", mesLiquidacionDe(item, it)) }
                     }
                 }
             }
@@ -171,8 +171,8 @@ fun DetalleDeudaScreen(vm: BancoViewModel, deudaId: Long, alVolver: () -> Unit) 
     if (editar) {
         DialogoDeuda(
             existente = item,
-            alGuardar = { acreedor, saldo, minimo, tasa, dia ->
-                vm.guardarDeuda(deudaId, acreedor, saldo, minimo, tasa, dia) { editar = false }
+            alGuardar = { acreedor, saldo, minimo, tasa, dia, proximo ->
+                vm.guardarDeuda(deudaId, acreedor, saldo, minimo, tasa, dia, proximo) { editar = false }
             },
             alCerrar = { editar = false }
         )

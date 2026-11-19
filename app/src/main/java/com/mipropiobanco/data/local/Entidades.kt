@@ -82,7 +82,9 @@ data class DeudaEntity(
     val pagoMinimo: Long,
     val tasaEA: Double,
     val diaPago: Int,
-    val fechaRegistro: Long
+    val fechaRegistro: Long,
+    /** Fecha exacta del próximo pago (ms). 0 = se calcula con el día de pago. */
+    val proximoPago: Long = 0L
 )
 
 /** Pago hecho a una deuda con terceros. */

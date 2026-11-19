@@ -189,7 +189,8 @@ class BancoRepository(private val db: BancoDatabase) {
         saldoActual: Long,
         pagoMinimo: Long,
         tasaEA: Double,
-        diaPago: Int
+        diaPago: Int,
+        proximoPago: Long = 0L
     ) = db.withTransaction {
         require(acreedor.isNotBlank()) { "Escribe a quién le debes" }
         require(saldoActual > 0L) { "El saldo debe ser mayor que cero" }
@@ -204,7 +205,8 @@ class BancoRepository(private val db: BancoDatabase) {
                     pagoMinimo = pagoMinimo,
                     tasaEA = tasaEA,
                     diaPago = diaPago,
-                    fechaRegistro = Formato.hoyMillis()
+                    fechaRegistro = Formato.hoyMillis(),
+                    proximoPago = proximoPago
                 )
             )
         } else {
@@ -216,7 +218,8 @@ class BancoRepository(private val db: BancoDatabase) {
                     saldoInicial = saldoActual + abonado,
                     pagoMinimo = pagoMinimo,
                     tasaEA = tasaEA,
-                    diaPago = diaPago
+                    diaPago = diaPago,
+                    proximoPago = if (proximoPago > 0L) proximoPago else actual.proximoPago
                 )
             )
         }
@@ -235,6 +238,19 @@ class BancoRepository(private val db: BancoDatabase) {
         check(!item.pagada) { "Esta deuda ya está pagada" }
         val aplicado = minOf(monto, item.saldo)
         abonoDao.insertar(AbonoDeudaEntity(deudaId = deudaId, fecha = fecha, monto = aplicado))
+        // Si la deuda tiene fecha exacta y con este pago se cubre la cuota, el próximo pago pasa al mes siguiente.
+        if (deuda.proximoPago > 0L) {
+            val vence = Formato.aLocalDate(deuda.proximoPago)
+            val desde = vence.minusDays(25)
+            val enCiclo = abonoDao.obtenerPorDeuda(deudaId)
+                .filter { !Formato.aLocalDate(it.fecha).isBefore(desde) }
+                .sumOf { it.monto }
+            if (enCiclo >= minOf(deuda.pagoMinimo, item.saldo)) {
+                val siguiente = java.time.YearMonth.from(vence).plusMonths(1)
+                val dia = deuda.diaPago.coerceIn(1, siguiente.lengthOfMonth())
+                deudaDao.actualizar(deuda.copy(proximoPago = Formato.aMillis(siguiente.atDay(dia))))
+            }
+        }
         item.saldo - aplicado
     }
 

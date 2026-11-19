@@ -64,6 +64,10 @@ private val formatoMes = DateTimeFormatter.ofPattern("MMMM yyyy", Formato.locale
 /** Mes calendario en que se liquida algo, contando el mes 1 como el actual. */
 fun mesDelPlan(mes: Int): String = YearMonth.now().plusMonths((mes - 1).toLong()).format(formatoMes)
 
+/** Mes en que se liquida una deuda: el mes 1 del plan es el de su próximo pago. */
+fun mesLiquidacionDe(d: DeudaConAbonos, mes: Int): String =
+    YearMonth.from(d.proximoVencimiento(java.time.LocalDate.now())).plusMonths((mes - 1).toLong()).format(formatoMes)
+
 @Composable
 fun DeudasScreen(vm: BancoViewModel, alAbrir: (Long) -> Unit) {
     val deudas by vm.deudas.collectAsStateWithLifecycle()
@@ -167,8 +171,8 @@ fun DeudasScreen(vm: BancoViewModel, alAbrir: (Long) -> Unit) {
     if (nuevaDeuda) {
         DialogoDeuda(
             existente = null,
-            alGuardar = { acreedor, saldo, minimo, tasa, dia ->
-                vm.guardarDeuda(null, acreedor, saldo, minimo, tasa, dia) { nuevaDeuda = false }
+            alGuardar = { acreedor, saldo, minimo, tasa, dia, proximo ->
+                vm.guardarDeuda(null, acreedor, saldo, minimo, tasa, dia, proximo) { nuevaDeuda = false }
             },
             alCerrar = { nuevaDeuda = false }
         )
@@ -270,7 +274,7 @@ private fun TarjetaDeuda(
             FilaResumen("Paga este mes", Formato.cop(pagoMes), destacado = true)
             FilaResumen("Pago mínimo · día de pago", "${Formato.cop(item.deuda.pagoMinimo)} · día ${item.deuda.diaPago}")
             plan.mesLiquidacion[item.deuda.id]?.let { mes ->
-                FilaResumen("La liquidas en", mesDelPlan(mes))
+                FilaResumen("La liquidas en", mesLiquidacionDe(item, mes))
             }
             if (estado != null) {
                 Cronometro(
@@ -315,14 +319,20 @@ private fun DialogoPresupuesto(actual: Long, sumaMinimos: Long, alGuardar: (Long
 @Composable
 fun DialogoDeuda(
     existente: DeudaConAbonos?,
-    alGuardar: (acreedor: String, saldo: Long, minimo: Long, tasaEA: Double, dia: Int) -> Unit,
+    alGuardar: (acreedor: String, saldo: Long, minimo: Long, tasaEA: Double, dia: Int, proximoPago: Long) -> Unit,
     alCerrar: () -> Unit
 ) {
     var acreedor by rememberSaveable { mutableStateOf(existente?.deuda?.acreedor.orEmpty()) }
     var saldo by rememberSaveable { mutableStateOf(existente?.saldo?.toString().orEmpty()) }
     var minimo by rememberSaveable { mutableStateOf(existente?.deuda?.pagoMinimo?.toString().orEmpty()) }
     var tasa by rememberSaveable { mutableStateOf(existente?.deuda?.tasaEA?.let { Formato.decimal(it) } ?: "0") }
-    var dia by rememberSaveable { mutableStateOf(existente?.deuda?.diaPago?.toString() ?: "") }
+    var proximo by rememberSaveable {
+        mutableStateOf(
+            existente?.let { Formato.aMillis(it.proximoVencimiento(java.time.LocalDate.now())) }
+                ?: Formato.aMillis(java.time.LocalDate.now().plusMonths(1))
+        )
+    }
+    val dia = Formato.aLocalDate(proximo).dayOfMonth.toString()
 
     val saldoV = saldo.toLongOrNull() ?: 0L
     val minimoV = minimo.toLongOrNull() ?: 0L
@@ -351,18 +361,16 @@ fun DialogoDeuda(
                     etiqueta = "Tasa de interés",
                     apoyo = "Si es sin intereses (familia, amigos), deja 0"
                 )
-                CampoEntero(
-                    valor = dia,
-                    alCambiar = { dia = it },
-                    etiqueta = "Día de pago (1 a 31)",
-                    maxDigitos = 2,
-                    error = if (dia.isNotEmpty() && diaV !in 1..31) "Entre 1 y 31" else null
+                com.mipropiobanco.ui.components.SelectorFecha("Próximo pago", proximo, { proximo = it })
+                Text(
+                    "Después se repite el día $dia de cada mes. Cuando pagas la cuota, la fecha pasa sola al mes siguiente.",
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         },
         confirmButton = {
             TextButton(enabled = valido, onClick = {
-                alGuardar(acreedor, saldoV, minimoV, tasaV ?: 0.0, diaV)
+                alGuardar(acreedor, saldoV, minimoV, tasaV ?: 0.0, diaV, proximo)
             }) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }

@@ -971,9 +971,10 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         pagoMinimo: Long,
         tasaEA: Double,
         diaPago: Int,
+        proximoPago: Long = 0L,
         alGuardar: () -> Unit = {}
     ) = ejecutar(
-        accion = { repo.guardarDeuda(id, acreedor, saldo, pagoMinimo, tasaEA, diaPago) },
+        accion = { repo.guardarDeuda(id, acreedor, saldo, pagoMinimo, tasaEA, diaPago, proximoPago) },
         mensaje = { if (id == null) "Deuda con $acreedor agregada" else "Deuda actualizada" },
         alTerminar = { alGuardar() }
     )

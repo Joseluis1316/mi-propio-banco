@@ -35,6 +35,8 @@ data class DeudaConAbonos(
      * - si no, la de este ciclo.
      */
     fun proximoVencimiento(hoy: LocalDate): LocalDate {
+        // Si el usuario puso la fecha exacta, esa manda (se corre un mes cada vez que paga la cuota).
+        if (deuda.proximoPago > 0L) return Formato.aLocalDate(deuda.proximoPago)
         val mesActual = YearMonth.from(hoy)
         var actual = fechaEnMes(mesActual)
         var mes = mesActual
@@ -48,7 +50,7 @@ data class DeudaConAbonos(
         if (!anterior.isBefore(registro) && anterior.isBefore(hoy) && !pagoEntre(antesDeAnterior, anterior)) {
             return anterior
         }
-        return if (pagoEntre(anterior, actual)) fechaEnMes(mes.plusMonths(1)) else actual
+        return if (pagoEntre(anterior.plusDays(10), actual)) fechaEnMes(mes.plusMonths(1)) else actual
     }
 
     fun estado(ahoraMs: Long): EstadoPagoDeuda? {
