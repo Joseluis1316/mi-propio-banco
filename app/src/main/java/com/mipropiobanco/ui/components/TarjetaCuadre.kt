@@ -42,7 +42,7 @@ enum class OrigenFaltante { INGRESO, PRESTAMO, YA_LA_TENIA }
 fun TarjetaCuadre(
     c: Cuadre,
     titulo: String,
-    alCorregirInicio: (Long, OrigenFaltante, String) -> Unit = { _, _, _ -> },
+    alCorregirInicio: (Long, OrigenFaltante, String) -> Unit,
     alExplicar: (MedioPagoEntity, Long, OrigenFaltante, String) -> Unit
 ) {
     var explicando by remember { mutableStateOf<Pair<MedioPagoEntity, Long>?>(null) }
@@ -61,12 +61,8 @@ fun TarjetaCuadre(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Fila("Empezaste con", c.inicio, null)
-                }
-            }
-            TextButton(onClick = { corrigiendoInicio = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+            Fila("Empezaste con", c.inicio, null)
+            TextButton(onClick = { corrigiendoInicio = true }) {
                 Text("¿No empezaste con eso? Corrígelo aquí", style = MaterialTheme.typography.labelMedium)
             }
             if (c.ganado > 0L) Fila("💪 Ganaste", c.ganado, verde, "+")
@@ -111,8 +107,9 @@ fun TarjetaCuadre(
         var real by remember { mutableStateOf("") }
         var pidiendoNombre by remember { mutableStateOf(false) }
         var acreedor by remember { mutableStateOf("") }
-        val realV = real.toLongOrNull()
-        val falta = if (realV != null) c.inicio - realV else 0L
+        val hayValor = real.toLongOrNull() != null
+        val realV: Long = real.toLongOrNull() ?: 0L
+        val falta: Long = if (hayValor) c.inicio - realV else 0L
         AlertDialog(
             onDismissRequest = { corrigiendoInicio = false },
             title = { Text("¿Con cuánto empezaste el mes?") },
@@ -123,7 +120,7 @@ fun TarjetaCuadre(
                         style = MaterialTheme.typography.bodySmall
                     )
                     CampoMonto(valor = real, alCambiar = { real = it }, etiqueta = "Lo que tenía el día 1")
-                    if (realV != null && falta > 0L) {
+                    if (hayValor && falta > 0L) {
                         Text(
                             "Entonces ${Formato.cop(falta)} de lo que gastaste salió de algún lado que no está anotado. ¿Qué fue?",
                             fontWeight = FontWeight.SemiBold
@@ -145,7 +142,7 @@ fun TarjetaCuadre(
                                 label = { Text("¿Quién te prestó?") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    } else if (realV != null && falta < 0L) {
+                    } else if (hayValor && falta < 0L) {
                         Text(
                             "Tenías ${Formato.cop(-falta)} más de lo que la app cree: entonces hay gastos que no están anotados. Guardar ajusta el punto de partida y la diferencia queda como gasto sin detalle.",
                             style = MaterialTheme.typography.bodySmall
@@ -154,7 +151,7 @@ fun TarjetaCuadre(
                 }
             },
             confirmButton = {
-                if (realV != null && (falta < 0L || pidiendoNombre)) {
+                if (hayValor && (falta < 0L || pidiendoNombre)) {
                     FilledTonalButton(onClick = {
                         alCorregirInicio(realV, if (pidiendoNombre) OrigenFaltante.PRESTAMO else OrigenFaltante.YA_LA_TENIA, acreedor)
                         corrigiendoInicio = false

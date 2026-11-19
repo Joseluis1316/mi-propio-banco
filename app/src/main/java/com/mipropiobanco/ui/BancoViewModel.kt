@@ -179,12 +179,15 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             val meds = finanzas.medios.first()
             val cuadre = com.mipropiobanco.domain.Cuadre.de(movs, meds, finanzas.categorias.first(), mes)
             val diferencia = cuadre.inicio - real
-            if (diferencia == 0L) return@ejecutar "Ya estaba cuadrado"
             val medio = finanzas.medioPorDefecto() ?: throw IllegalStateException("Crea primero una cuenta")
-            guardarPunto("corregir inicio de ${Formato.mesAnio(mes)}")
             val dia1 = Formato.aMillis(mes.atDay(1))
-            finanzas.sumarSaldoInicial(medio.id, -diferencia)
-            if (diferencia > 0L) {
+            if (diferencia != 0L) {
+                guardarPunto("corregir inicio de ${Formato.mesAnio(mes)}")
+                finanzas.sumarSaldoInicial(medio.id, -diferencia)
+            }
+            if (diferencia == 0L) {
+                "Ya estaba cuadrado"
+            } else if (diferencia > 0L) {
                 if (origen == com.mipropiobanco.ui.components.OrigenFaltante.PRESTAMO) {
                     val quien = acreedor.trim().ifBlank { "Préstamo recibido" }
                     finanzas.guardarMovimiento(null, TipoMovimiento.INGRESO, diferencia, finanzas.categoriaPrestamosRecibidos(), medio.id, dia1, "Préstamo de $quien", null)
