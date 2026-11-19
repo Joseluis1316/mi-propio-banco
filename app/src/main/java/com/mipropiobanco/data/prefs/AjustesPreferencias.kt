@@ -48,6 +48,15 @@ class AjustesPreferencias(context: Context) {
         _urlScript.value = v
     }
 
+    /** Toda salida de plata que llega por correo se anota sola como gasto (se clasifica después). */
+    private val _gastosSolos = MutableStateFlow(prefs.getBoolean(CLAVE_GASTOS_SOLOS, true))
+    val gastosSolos: StateFlow<Boolean> = _gastosSolos.asStateFlow()
+
+    fun cambiarGastosSolos(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_GASTOS_SOLOS, valor).apply()
+        _gastosSolos.value = valor
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -95,6 +104,7 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_TEMA = "modo_tema"
         const val CLAVE_FECHA_INICIO = "fecha_inicio"
         const val CLAVE_URL_SCRIPT = "url_script"
+        const val CLAVE_GASTOS_SOLOS = "gastos_solos"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"
         const val CLAVE_MODO_LOCAL = "modo_local"
         const val CLAVE_MODIFICADO = "local_modificado"

@@ -284,6 +284,9 @@ class FinanzasRepository(private val db: BancoDatabase) {
         m.foto?.let { ruta -> if (!fotoEnUso(ruta)) runCatching { java.io.File(ruta).delete() } }
     }
 
+    /** Categoría para los gastos que llegan por correo y aún no clasificas. */
+    suspend fun categoriaPorClasificar(): Long = categoriaPorNombre("Por clasificar", TipoMovimiento.GASTO, "🏷️")
+
     /** Categoría de gasto para el dinero que sacas en efectivo (se da por gastado al retirarlo). */
     suspend fun categoriaEfectivo(): Long = categoriaPorNombre("Efectivo (retiros)", TipoMovimiento.GASTO, "💵")
 

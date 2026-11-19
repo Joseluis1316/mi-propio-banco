@@ -313,6 +313,15 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         }
     }
 
+    val gastosSolos: StateFlow<Boolean> = preferencias.gastosSolos
+    fun cambiarGastosSolos(valor: Boolean) {
+        preferencias.cambiarGastosSolos(valor)
+        if (valor) {
+            correosProcesados.clear()
+            registrarCorreosConocidos(bandeja.value)
+        }
+    }
+
     val autoCorreos: StateFlow<Boolean> = preferencias.autoCorreos
     fun cambiarAutoCorreos(valor: Boolean) = preferencias.cambiarAutoCorreos(valor)
 
@@ -361,19 +370,25 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                 if (InterpreteCorreo.buscarDuplicado(m, existentes) != null) continue
                 val (p, conocido) = construirPropuesta(m)
                 val medio = p.medioId ?: continue
-                val listo = conocido && (p.tipo == TipoMovimiento.TRASLADO && p.medioDestinoId != null ||
-                    p.tipo != TipoMovimiento.TRASLADO && p.categoriaId != null)
+                var categoriaFinal = p.categoriaId
+                var listo = conocido && (p.tipo == TipoMovimiento.TRASLADO && p.medioDestinoId != null ||
+                    p.tipo != TipoMovimiento.TRASLADO && categoriaFinal != null)
+                // Toda salida de plata va a gastos de una vez; la categoría se pone después.
+                if (!listo && p.tipo == TipoMovimiento.GASTO && preferencias.gastosSolos.value) {
+                    if (categoriaFinal == null) categoriaFinal = finanzas.categoriaPorClasificar()
+                    listo = true
+                }
                 if (!listo) continue
                 correosProcesados.add(c.id)
                 try {
                     finanzas.guardarMovimiento(
-                        null, p.tipo, p.monto ?: continue, p.categoriaId ?: 0L, medio,
+                        null, p.tipo, p.monto ?: continue, categoriaFinal ?: 0L, medio,
                         Formato.aMillis(p.fecha), p.nota, null, null, null, p.medioDestinoId
                     )
                     nube.quitarDeBandeja(c.id)
                     existentes.add(
                         com.mipropiobanco.data.local.MovimientoEntity(
-                            tipo = p.tipo.name, monto = p.monto ?: 0L, categoriaId = p.categoriaId ?: 0L,
+                            tipo = p.tipo.name, monto = p.monto ?: 0L, categoriaId = categoriaFinal ?: 0L,
                             medioId = medio, fecha = Formato.aMillis(p.fecha), nota = p.nota,
                             medioDestinoId = p.medioDestinoId
                         )

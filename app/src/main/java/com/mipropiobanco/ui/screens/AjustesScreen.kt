@@ -157,6 +157,17 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                             Text("Guardar enlace")
                         }
                     }
+                    val gastosSolos by vm.gastosSolos.collectAsStateWithLifecycle()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Toda salida de plata = gasto")
+                            Text(
+                                "Lo que sale de tu cuenta se anota solo como gasto en 🏷️ Por clasificar; le pones la categoría cuando quieras.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = gastosSolos, onCheckedChange = { vm.cambiarGastosSolos(it) })
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Registrar solos los conocidos")
