@@ -103,6 +103,64 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                 val ocultar by vm.ocultarSaldos.collectAsStateWithLifecycle()
                 val respaldos by vm.respaldosAuto.collectAsStateWithLifecycle()
                 var restaurando by remember { mutableStateOf<String?>(null) }
+                val avisos by vm.avisos.collectAsStateWithLifecycle()
+                val leerNotif by vm.leerNotificaciones.collectAsStateWithLifecycle()
+                val contexto = androidx.compose.ui.platform.LocalContext.current
+                val pedirPermiso = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { concedido -> vm.cambiarAvisos(concedido) }
+                var accesoNotif by remember { mutableStateOf(vm.tieneAccesoNotificaciones()) }
+                androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                    accesoNotif = vm.tieneAccesoNotificaciones()
+                    onPauseOrDispose { }
+                }
+                Seccion("🔔 Avisos y lectura automática") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Recordatorios")
+                            Text(
+                                "Te avisa 2 días antes de cada pago de deudas y cuotas, si vas atrasado y si te pasas del presupuesto.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = avisos, onCheckedChange = { activar ->
+                            if (activar && android.os.Build.VERSION.SDK_INT >= 33) {
+                                pedirPermiso.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                vm.cambiarAvisos(activar)
+                            }
+                        })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Leer Nequi y Daviplata")
+                            Text(
+                                if (accesoNotif) "✅ Permiso activo. Lo que pagues o recibas por Nequi/Daviplata se anota solo."
+                                else "Anota solos los movimientos de Nequi y Daviplata leyendo sus notificaciones. Necesita un permiso del celular.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        androidx.compose.material3.Switch(checked = leerNotif, onCheckedChange = { vm.cambiarLeerNotificaciones(it) })
+                    }
+                    if (leerNotif && !accesoNotif) {
+                        FilledTonalButton(
+                            onClick = {
+                                runCatching {
+                                    contexto.startActivity(
+                                        android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Dar permiso (busca «Mi Propio Banco» y actívalo)") }
+                    }
+                    Text(
+                        "Si mandas plata de Bancolombia a TU Nequi, la primera vez guárdala como Traslado; así no se cuenta doble.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Seccion("🔒 Seguridad y privacidad") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

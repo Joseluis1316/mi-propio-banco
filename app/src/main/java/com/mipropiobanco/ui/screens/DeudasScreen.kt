@@ -94,6 +94,28 @@ fun DeudasScreen(vm: BancoViewModel, alAbrir: (Long) -> Unit) {
                     }
                 } else {
                     item {
+                        androidx.compose.material3.Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                            )
+                        ) {
+                            androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) {
+                                Text("¿A quién le debo?", style = MaterialTheme.typography.titleMedium)
+                                androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 10.dp))
+                                com.mipropiobanco.ui.components.GraficaDona(
+                                    plan.orden.mapIndexed { i, d ->
+                                        com.mipropiobanco.ui.components.Porcion(
+                                            d.deuda.acreedor, d.saldo,
+                                            com.mipropiobanco.ui.components.PaletaGraficas[(i + 3) % com.mipropiobanco.ui.components.PaletaGraficas.size]
+                                        )
+                                    },
+                                    "Debes"
+                                )
+                            }
+                        }
+                    }
+                    item {
                         Text("Orden de ataque", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                     items(plan.orden, key = { it.deuda.id }) { d ->

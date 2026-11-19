@@ -71,7 +71,8 @@ fun DashboardScreen(
     alVerDeudas: () -> Unit,
     alVerMovimientos: () -> Unit,
     alAjustes: () -> Unit,
-    alBandeja: () -> Unit = {}
+    alBandeja: () -> Unit = {},
+    alMetas: () -> Unit = {}
 ) {
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
@@ -84,6 +85,7 @@ fun DashboardScreen(
     val medios by vm.medios.collectAsStateWithLifecycle()
     val deudas by vm.deudas.collectAsStateWithLifecycle()
     val categorias by vm.categorias.collectAsStateWithLifecycle()
+    val metas by vm.metas.collectAsStateWithLifecycle()
 
     val saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos)
     val enCuentas = saldos.values.sum()
@@ -228,6 +230,43 @@ fun DashboardScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Metas ----
+        item {
+            Card(
+                onClick = alMetas,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎯 Metas de ahorro", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text(if (metas.isEmpty()) "Crear ›" else "Ver ›", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                    }
+                    if (metas.isEmpty()) {
+                        Text(
+                            "Moto, viaje, fondo de emergencia… ponle número a tus sueños.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    metas.take(3).forEach { m ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row {
+                                Text("${m.icono} ${m.nombre}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                                Text("${(m.fraccion * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            }
+                            LinearProgressIndicator(
+                                progress = { m.fraccion },
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)),
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                drawStopIndicator = {}
+                            )
                         }
                     }
                 }

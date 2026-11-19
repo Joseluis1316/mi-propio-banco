@@ -47,6 +47,7 @@ class BackupManager(
         raiz.put("version", VERSION)
         raiz.put("exportadoEn", Formato.hoyIso())
         raiz.put("presupuestoDeudas", preferencias.presupuestoDeudas.value)
+        raiz.put("metas", runCatching { JSONArray(preferencias.metasJson.value) }.getOrDefault(JSONArray()))
 
         raiz.put("aportes", JSONArray().apply {
             db.aporteDao().obtenerTodos().forEach { a ->
@@ -217,6 +218,7 @@ class BackupManager(
                 db.tipoPrestamoDao().insertarTodos(datos.tipos)
             }
         }
+        raiz.optJSONArray("metas")?.let { preferencias.guardarMetasJson(it.toString()) }
         if (raiz.has("presupuestoDeudas")) {
             preferencias.cambiarPresupuestoDeudas(raiz.optLong("presupuestoDeudas", 0L))
         }

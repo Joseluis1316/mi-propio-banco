@@ -43,9 +43,20 @@ class MainActivity : FragmentActivity() {
 
     private val preferencias get() = (application as MiPropioBancoApp).preferencias
 
+    private val pedirNotificaciones = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { concedido -> if (!concedido) preferencias.cambiarAvisos(false) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) bloqueada.value = preferencias.bloqueo.value && puedeBloquear()
+        // Android 13+: pedir permiso para los recordatorios la primera vez.
+        if (savedInstanceState == null && android.os.Build.VERSION.SDK_INT >= 33 && preferencias.avisos.value &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pedirNotificaciones.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         enableEdgeToEdge()
         setContent {
             val vm: BancoViewModel = viewModel()

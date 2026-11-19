@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -210,7 +211,13 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         val meds = finanzas.medios.first()
         fun medioCon(palabra: String) = meds.firstOrNull { Interprete.normalizar(it.nombre).contains(palabra) }
         val medioBanco = medioCon("bancolombia") ?: medioCon("transferencia") ?: meds.firstOrNull()
-        val medioTarjeta = when (m.tarjeta) {
+        // Notificaciones de Nequi / Daviplata: el movimiento es de esa billetera.
+        val medioApp = when {
+            m.id.startsWith("nequi_") -> medioCon("nequi")
+            m.id.startsWith("daviplata_") -> medioCon("daviplata")
+            else -> null
+        }
+        val medioTarjeta = medioApp ?: when (m.tarjeta) {
             "credito" -> medioCon("credito")
             "debito" -> medioCon("bancolombia") ?: medioCon("debito")
             else -> null
@@ -801,6 +808,102 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         },
         mensaje = { "↩️ Listo, se recuperó cómo estaba antes" }
     )
+
+    // ---------- Metas de ahorro ----------
+
+    val metas: StateFlow<List<com.mipropiobanco.domain.Meta>> = preferencias.metasJson
+        .map { com.mipropiobanco.domain.MetasJson.leer(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private fun guardarMetas(lista: List<com.mipropiobanco.domain.Meta>) {
+        preferencias.guardarMetasJson(com.mipropiobanco.domain.MetasJson.escribir(lista))
+        preferencias.marcarModificado()
+    }
+
+    fun guardarMeta(id: Long?, nombre: String, icono: String, objetivo: Long, fechaLimite: Long) {
+        if (nombre.isBlank() || objetivo <= 0L) {
+            viewModelScope.launch { _mensajes.emit("Escribe el nombre y cuánto quieres ahorrar") }
+            return
+        }
+        val actual = metas.value
+        val nueva = if (id == null) {
+            actual + com.mipropiobanco.domain.Meta(
+                id = System.currentTimeMillis(), nombre = nombre.trim(), icono = icono.ifBlank { "🎯" },
+                objetivo = objetivo, ahorrado = 0L, fechaLimite = fechaLimite
+            )
+        } else {
+            actual.map {
+                if (it.id == id) it.copy(nombre = nombre.trim(), icono = icono.ifBlank { "🎯" }, objetivo = objetivo, fechaLimite = fechaLimite)
+                else it
+            }
+        }
+        guardarMetas(nueva)
+        viewModelScope.launch { _mensajes.emit(if (id == null) "🎯 Meta creada" else "Meta actualizada") }
+    }
+
+    /** Suma (o resta, si es negativo) plata a una meta. Si [desdeCuenta], sale de Bancolombia como gasto de ahorro. */
+    fun abonarMeta(id: Long, monto: Long, desdeCuenta: Boolean) {
+        if (monto <= 0L) {
+            viewModelScope.launch { _mensajes.emit("Escribe cuánto vas a abonar") }
+            return
+        }
+        val meta = metas.value.firstOrNull { it.id == id } ?: return
+        val nuevo = (meta.ahorrado + monto).coerceAtLeast(0L)
+        guardarMetas(metas.value.map { if (it.id == id) it.copy(ahorrado = nuevo) else it })
+        viewModelScope.launch {
+            if (desdeCuenta && monto > 0L) {
+                runCatching {
+                    finanzas.anotarDeMiBanco(TipoMovimiento.GASTO, monto, Formato.hoyMillis(), "Ahorro: ${meta.nombre}", "Ahorro para metas")
+                }
+            }
+            _mensajes.emit(
+                if (meta.objetivo in 1..nuevo) "🎉 ¡Cumpliste la meta ${meta.nombre}!"
+                else "${meta.icono} ${meta.nombre}: llevas ${Formato.cop(nuevo)} de ${Formato.cop(meta.objetivo)}"
+            )
+        }
+    }
+
+    fun eliminarMeta(id: Long) {
+        guardarMetas(metas.value.filterNot { it.id == id })
+    }
+
+    // ---------- Reporte del mes en PDF ----------
+
+    fun exportarReporte(uri: Uri, mes: java.time.YearMonth) = ejecutar(
+        accion = {
+            val movs = finanzas.movimientos.first()
+            val cats = finanzas.categorias.first()
+            val meds = finanzas.medios.first()
+            val deudasActivas = repo.deudas.first().filter { !it.pagada }
+            val banco = repo.resumen.first()
+            withContext(Dispatchers.IO) {
+                val salida = app.contentResolver.openOutputStream(uri)
+                    ?: throw IllegalStateException("No se pudo crear el archivo")
+                salida.use {
+                    com.mipropiobanco.util.ReportePdf.escribir(
+                        it, mes, movs, cats, meds,
+                        deudasActivas.sumOf { d -> d.saldo }, banco.capitalTotal, metas.value
+                    )
+                }
+            }
+        },
+        mensaje = { "📄 Reporte de ${Formato.mesAnio(mes)} guardado" }
+    )
+
+    // ---------- Avisos y notificaciones ----------
+
+    val avisos: StateFlow<Boolean> = preferencias.avisos
+    fun cambiarAvisos(valor: Boolean) {
+        preferencias.cambiarAvisos(valor)
+        if (valor) runCatching { com.mipropiobanco.avisos.Recordatorios.programar(app) }
+    }
+
+    val leerNotificaciones: StateFlow<Boolean> = preferencias.leerNotificaciones
+    fun cambiarLeerNotificaciones(valor: Boolean) = preferencias.cambiarLeerNotificaciones(valor)
+
+    /** ¿El usuario ya le dio a la app permiso de leer notificaciones en Ajustes de Android? */
+    fun tieneAccesoNotificaciones(): Boolean =
+        androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(app).contains(app.packageName)
 
     // ---------- Seguridad y privacidad ----------
 

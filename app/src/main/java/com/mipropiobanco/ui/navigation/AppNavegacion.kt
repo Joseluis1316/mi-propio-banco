@@ -53,6 +53,7 @@ private object Rutas {
     const val AJUSTES = "ajustes"
     const val CONFIG_FINANZAS = "config_finanzas"
     const val BANDEJA = "bandeja"
+    const val METAS = "metas"
     const val NUEVO_PRESTAMO = "nuevo_prestamo"
     const val DETALLE_PRESTAMO = "prestamo"
     const val DETALLE_DEUDA = "deuda"
@@ -138,8 +139,12 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) },
                     alVerMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
                     alAjustes = { nav.navigate(Rutas.AJUSTES) },
-                    alBandeja = { nav.navigate(Rutas.BANDEJA) }
+                    alBandeja = { nav.navigate(Rutas.BANDEJA) },
+                    alMetas = { nav.navigate(Rutas.METAS) }
                 )
+            }
+            composable(Rutas.METAS) {
+                MetasScreen(vm = vm, alVolver = { nav.popBackStack() })
             }
             composable(
                 route = "${Rutas.MOVIMIENTOS}?nuevo={nuevo}",

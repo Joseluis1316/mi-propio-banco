@@ -3,6 +3,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Recordatorios de pagos y presupuesto (Android 13+ lo pide al usuario). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Para abrir el dictado por voz de Google en Android 11 o superior. -->
     <queries>
@@ -29,6 +31,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Lee las notificaciones de Nequi y Daviplata (el usuario lo activa en Ajustes del celular). -->
+        <service
+            android:name=".avisos.LectorNotificaciones"
+            android:exported="true"
+            android:label="Mi Propio Banco"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Comparte con la cámara el archivo donde se guarda la foto del recibo. -->
         <provider

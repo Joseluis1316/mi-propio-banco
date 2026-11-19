@@ -38,6 +38,10 @@ object Formato {
         else -> "$" + miles(valor)
     }
 
+    /** 2026-11 → "Noviembre 2026" */
+    fun mesAnio(mes: java.time.YearMonth): String =
+        mes.format(DateTimeFormatter.ofPattern("MMMM yyyy", localeCO)).replaceFirstChar { it.uppercase() }
+
     /** Igual que [cop] pero nunca oculta (para archivos exportados y mensajes de error). */
     fun copReal(valor: Long): String =
         if (valor < 0L) "-$" + miles(-valor) else "$" + miles(valor)

@@ -142,6 +142,9 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
     val mes = YearMonth.parse(mesTexto)
     var filtro by rememberSaveable { mutableStateOf(FiltroMov.TODOS) }
     var ajustandoSaldos by rememberSaveable { mutableStateOf(false) }
+    val reportePdf = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri -> uri?.let { vm.exportarReporte(it, mes) } }
     var eligiendoInicio by rememberSaveable { mutableStateOf(false) }
     if (eligiendoInicio) {
         DialogoInicio(
@@ -303,6 +306,43 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                     }
                 }
                 item { TarjetaResumenMes(resumen, medMap) }
+                if (resumen.gastoPorCategoria.isNotEmpty()) {
+                    item {
+                        val anterior = ResumenMes.de(movimientos, mes.minusMonths(1))
+                        val porciones = resumen.gastoPorCategoria.entries
+                            .sortedByDescending { it.value }
+                            .mapIndexed { i, (id, monto) ->
+                                val c = catMap[id]
+                                com.mipropiobanco.ui.components.Porcion(
+                                    "${c?.icono ?: "•"} ${c?.nombre ?: "Otros"}", monto,
+                                    com.mipropiobanco.ui.components.PaletaGraficas[i % com.mipropiobanco.ui.components.PaletaGraficas.size]
+                                )
+                            }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("Gastos por categoría", style = MaterialTheme.typography.titleMedium)
+                                com.mipropiobanco.ui.components.GraficaDona(porciones, "Gastado")
+                                val dif = resumen.gastos - anterior.gastos
+                                if (anterior.gastos > 0L) {
+                                    val pct = (kotlin.math.abs(dif) * 100 / anterior.gastos)
+                                    Text(
+                                        if (dif > 0L) "📈 Gastaste ${Formato.cop(dif)} más que el mes pasado (+$pct%)"
+                                        else "📉 Gastaste ${Formato.cop(-dif)} menos que el mes pasado (−$pct%) 👏",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (dif > 0L) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = { reportePdf.launch("reporte_${mes}.pdf") },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("📄 Descargar reporte del mes (PDF)") }
+                            }
+                        }
+                    }
+                }
                 item {
                     val saldos = com.mipropiobanco.domain.calcularSaldos(medios, movimientos)
                     Card(onClick = { ajustandoSaldos = true }, modifier = Modifier.fillMaxWidth()) {

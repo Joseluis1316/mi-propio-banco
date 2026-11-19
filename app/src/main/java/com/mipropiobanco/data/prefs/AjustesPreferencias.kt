@@ -88,6 +88,33 @@ class AjustesPreferencias(context: Context) {
     fun ultimoRespaldoAuto(): String = prefs.getString(CLAVE_RESPALDO_AUTO, "") ?: ""
     fun marcarRespaldoAuto(dia: String) = prefs.edit().putString(CLAVE_RESPALDO_AUTO, dia).apply()
 
+    /** Metas de ahorro guardadas como JSON (también viajan en el respaldo y la nube). */
+    private val _metasJson = MutableStateFlow(prefs.getString(CLAVE_METAS, "[]") ?: "[]")
+    val metasJson: StateFlow<String> = _metasJson.asStateFlow()
+
+    fun guardarMetasJson(valor: String) {
+        prefs.edit().putString(CLAVE_METAS, valor).apply()
+        _metasJson.value = valor
+    }
+
+    /** Notificaciones de recordatorio (pagos que vencen, presupuesto pasado). */
+    private val _avisos = MutableStateFlow(prefs.getBoolean(CLAVE_AVISOS, true))
+    val avisos: StateFlow<Boolean> = _avisos.asStateFlow()
+
+    fun cambiarAvisos(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_AVISOS, valor).apply()
+        _avisos.value = valor
+    }
+
+    /** Leer las notificaciones de Nequi y Daviplata para anotar los movimientos solos. */
+    private val _leerNotificaciones = MutableStateFlow(prefs.getBoolean(CLAVE_LEER_NOTIF, true))
+    val leerNotificaciones: StateFlow<Boolean> = _leerNotificaciones.asStateFlow()
+
+    fun cambiarLeerNotificaciones(valor: Boolean) {
+        prefs.edit().putBoolean(CLAVE_LEER_NOTIF, valor).apply()
+        _leerNotificaciones.value = valor
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -138,6 +165,9 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_GASTOS_SOLOS = "gastos_solos"
         const val CLAVE_CONECTAR_BANCO = "conectar_banco"
         const val CLAVE_BLOQUEO = "bloqueo"
+        const val CLAVE_METAS = "metas"
+        const val CLAVE_AVISOS = "avisos"
+        const val CLAVE_LEER_NOTIF = "leer_notificaciones"
         const val CLAVE_OCULTAR = "ocultar_saldos"
         const val CLAVE_RESPALDO_AUTO = "respaldo_auto"
         const val CLAVE_PRESUPUESTO = "presupuesto_deudas"

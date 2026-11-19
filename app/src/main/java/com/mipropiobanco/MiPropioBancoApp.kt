@@ -25,5 +25,6 @@ class MiPropioBancoApp : Application() {
     override fun onCreate() {
         super.onCreate()
         nube.iniciarAutoGuardado()
+        runCatching { com.mipropiobanco.avisos.Recordatorios.programar(this) }
     }
 }

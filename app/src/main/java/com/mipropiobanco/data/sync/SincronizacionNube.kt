@@ -114,6 +114,15 @@ class SincronizacionNube(
         }
     }
 
+    /** Deja un movimiento en la bandeja (lo usa el lector de notificaciones de Nequi/Daviplata). */
+    suspend fun agregarABandeja(id: String, texto: String, fecha: Long, origen: String) {
+        val usuario = auth.currentUser ?: return
+        withTimeoutOrNull(15_000L) {
+            documento(usuario.uid).collection("bandeja").document(id)
+                .set(mapOf("texto" to texto, "fecha" to fecha, "origen" to origen)).await()
+        }
+    }
+
     suspend fun quitarDeBandeja(id: String) {
         val usuario = auth.currentUser ?: return
         // Sin internet, Firestore guarda el borrado y lo envía después.
