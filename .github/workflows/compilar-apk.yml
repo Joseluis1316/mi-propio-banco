@@ -17,6 +17,9 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: chmod +x gradlew
+      - name: Pruebas automáticas (informativas)
+        run: ./gradlew testDebugUnitTest --no-daemon
+        continue-on-error: true
       - run: ./gradlew assembleDebug --no-daemon
       - name: Renombrar APK
         run: cp app/build/outputs/apk/debug/app-debug.apk MiPropioBanco.apk

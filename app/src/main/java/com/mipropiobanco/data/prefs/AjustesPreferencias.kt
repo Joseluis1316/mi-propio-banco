@@ -115,6 +115,15 @@ class AjustesPreferencias(context: Context) {
         _leerNotificaciones.value = valor
     }
 
+    /** Carpeta del celular (elegida por el usuario) donde se guarda la copia diaria. */
+    private val _carpetaRespaldo = MutableStateFlow(prefs.getString(CLAVE_CARPETA, "") ?: "")
+    val carpetaRespaldo: StateFlow<String> = _carpetaRespaldo.asStateFlow()
+
+    fun cambiarCarpetaRespaldo(valor: String) {
+        prefs.edit().putString(CLAVE_CARPETA, valor).apply()
+        _carpetaRespaldo.value = valor
+    }
+
     fun cambiarAutoCorreos(valor: Boolean) {
         prefs.edit().putBoolean(CLAVE_AUTO_CORREOS, valor).apply()
         _autoCorreos.value = valor
@@ -166,6 +175,7 @@ class AjustesPreferencias(context: Context) {
         const val CLAVE_CONECTAR_BANCO = "conectar_banco"
         const val CLAVE_BLOQUEO = "bloqueo"
         const val CLAVE_METAS = "metas"
+        const val CLAVE_CARPETA = "carpeta_respaldo"
         const val CLAVE_AVISOS = "avisos"
         const val CLAVE_LEER_NOTIF = "leer_notificaciones"
         const val CLAVE_OCULTAR = "ocultar_saldos"

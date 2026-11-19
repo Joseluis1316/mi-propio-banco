@@ -467,6 +467,13 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
                     continue
                 }
                 if (!preferencias.autoCorreos.value) continue
+                // Plata que pasó entre mis cuentas (Bancolombia ↔ Nequi/Daviplata): un traslado, no gasto + ingreso.
+                if (emparejarTraslado(c.id, m, existentes)) {
+                    correosProcesados.add(c.id)
+                    runCatching { nube.quitarDeBandeja(c.id) }
+                    registrados++
+                    continue
+                }
                 // Parecido a algo ya anotado (mismo monto, días cercanos): que lo revises tú.
                 if (InterpreteCorreo.buscarDuplicado(m, existentes) != null) continue
                 val (p, conocido) = construirPropuesta(m)
@@ -525,6 +532,60 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             "🧹 $borrados duplicados borrados · $convertidos retiros pasados a gasto"
         }
     )
+
+    /**
+     * Si llega un ingreso a Nequi/Daviplata y hay un gasto del mismo monto (±1 día) en otra cuenta,
+     * o al revés, es la misma plata moviéndose entre mis cuentas: se convierte en un traslado.
+     */
+    private suspend fun emparejarTraslado(
+        id: String,
+        m: MovimientoCorreo,
+        existentes: MutableList<MovimientoEntity>
+    ): Boolean {
+        val meds = finanzas.medios.first()
+        fun medioCon(palabra: String) = meds.firstOrNull { Interprete.normalizar(it.nombre).contains(palabra) }
+        val billetera = when {
+            id.startsWith("nequi_") -> medioCon("nequi")
+            id.startsWith("daviplata_") -> medioCon("daviplata")
+            else -> null
+        }
+        fun cerca(fecha: Long) = kotlin.math.abs(
+            java.time.temporal.ChronoUnit.DAYS.between(Formato.aLocalDate(fecha), m.fecha)
+        ) <= 1
+        val billeteras = meds.filter {
+            val n = Interprete.normalizar(it.nombre); n.contains("nequi") || n.contains("daviplata")
+        }.map { it.id }.toSet()
+
+        val (gasto, destino) = if (billetera != null && m.tipo == TipoMovimiento.INGRESO) {
+            // Llegó plata a la billetera: ¿salió de otra cuenta mía?
+            val g = existentes.firstOrNull {
+                it.id > 0L && it.tipo == TipoMovimiento.GASTO.name && it.monto == m.monto &&
+                    it.medioId != billetera.id && cerca(it.fecha)
+            } ?: return false
+            g to billetera.id
+        } else if (billetera == null && m.tipo == TipoMovimiento.GASTO) {
+            // Salió plata del banco: ¿ya había llegado a una billetera mía?
+            val ingreso = existentes.firstOrNull {
+                it.id > 0L && it.tipo == TipoMovimiento.INGRESO.name && it.monto == m.monto &&
+                    it.medioId in billeteras && cerca(it.fecha)
+            } ?: return false
+            val origen = (medioCon("bancolombia") ?: finanzas.medioPorDefecto())?.id ?: return false
+            finanzas.guardarMovimiento(
+                ingreso.id, TipoMovimiento.TRASLADO, ingreso.monto, ingreso.categoriaId, origen,
+                ingreso.fecha, "Traslado a mi billetera", null, null, ingreso.foto, ingreso.medioId
+            )
+            existentes.remove(ingreso)
+            return true
+        } else {
+            return false
+        }
+        finanzas.guardarMovimiento(
+            gasto.id, TipoMovimiento.TRASLADO, gasto.monto, gasto.categoriaId, gasto.medioId,
+            gasto.fecha, "Traslado a mi billetera", null, null, gasto.foto, destino
+        )
+        existentes.remove(gasto)
+        return true
+    }
 
     /** Guarda el movimiento del correo, recuerda cómo se clasificó y lo saca de la bandeja. */
     fun guardarDesdeCorreo(
@@ -724,6 +785,7 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                com.mipropiobanco.util.RegistroErrores.anotar(e.message ?: "Error", e)
                 _mensajes.emit(e.message ?: "Ocurrió un error inesperado")
             }
         }
@@ -871,11 +933,19 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
 
     // ---------- Deshacer (copia automática antes de cambios grandes) ----------
 
-    private val archivoDeshacer get() = File(app.filesDir, "deshacer.json")
-    private val archivoMotivo get() = File(app.filesDir, "deshacer.txt")
+    /** Carpeta con hasta 5 copias (la más nueva primero): deshacer de varios pasos. */
+    private val carpetaDeshacer get() = File(app.filesDir, "deshacer").apply { mkdirs() }
+
+    private fun puntosGuardados(): List<File> =
+        (carpetaDeshacer.listFiles()?.toList() ?: emptyList())
+            .filter { it.name.endsWith(".json") }
+            .sortedByDescending { it.name }
+
+    private fun motivoDe(f: File): String? =
+        runCatching { File(f.path.removeSuffix(".json") + ".txt").readText() }.getOrNull()
 
     private val _puntoDeshacer = kotlinx.coroutines.flow.MutableStateFlow(
-        runCatching { if (archivoDeshacer.exists()) archivoMotivo.readText() else null }.getOrNull()
+        runCatching { puntosGuardados().firstOrNull()?.let { motivoDe(it) } }.getOrNull()
     )
     /** Qué se puede deshacer (texto), o null si no hay nada. */
     val puntoDeshacer: StateFlow<String?> = _puntoDeshacer
@@ -884,22 +954,92 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
     private suspend fun guardarPunto(motivo: String) {
         val json = respaldo.exportarJson()
         withContext(Dispatchers.IO) {
-            archivoDeshacer.writeText(json)
-            archivoMotivo.writeText(motivo)
+            val base = "punto_${System.currentTimeMillis()}"
+            File(carpetaDeshacer, "$base.json").writeText(json)
+            File(carpetaDeshacer, "$base.txt").writeText(motivo)
+            puntosGuardados().drop(5).forEach { f ->
+                f.delete()
+                File(f.path.removeSuffix(".json") + ".txt").delete()
+            }
         }
         _puntoDeshacer.value = motivo
     }
 
     fun deshacer() = ejecutar(
         accion = {
-            val texto = withContext(Dispatchers.IO) { archivoDeshacer.takeIf { it.exists() }?.readText() }
+            val ultimo = withContext(Dispatchers.IO) { puntosGuardados().firstOrNull() }
                 ?: throw IllegalStateException("No hay nada para deshacer")
+            val texto = withContext(Dispatchers.IO) { ultimo.readText() }
             respaldo.importarJson(texto)
-            withContext(Dispatchers.IO) { archivoDeshacer.delete(); archivoMotivo.delete() }
-            _puntoDeshacer.value = null
+            withContext(Dispatchers.IO) {
+                ultimo.delete()
+                File(ultimo.path.removeSuffix(".json") + ".txt").delete()
+            }
+            _puntoDeshacer.value = withContext(Dispatchers.IO) { puntosGuardados().firstOrNull()?.let { motivoDe(it) } }
         },
         mensaje = { "↩️ Listo, se recuperó cómo estaba antes" }
     )
+
+    // ---------- Registro de errores ----------
+
+    fun cantidadErrores(): Int = com.mipropiobanco.util.RegistroErrores.cantidad()
+
+    fun exportarErrores(uri: Uri) = ejecutar(
+        accion = { escribir(uri, com.mipropiobanco.util.RegistroErrores.contenido()) },
+        mensaje = { "Registro de errores exportado" }
+    )
+
+    fun borrarErrores() {
+        com.mipropiobanco.util.RegistroErrores.borrar()
+        viewModelScope.launch { _mensajes.emit("Registro de errores borrado") }
+    }
+
+    // ---------- Registro rápido (1 toque) ----------
+
+    /** Repite un movimiento frecuente con la fecha de hoy. */
+    fun registrarRapido(tipo: TipoMovimiento, monto: Long, categoriaId: Long, medioId: Long, nota: String) = ejecutar(
+        accion = { finanzas.guardarMovimiento(null, tipo, monto, categoriaId, medioId, Formato.hoyMillis(), nota, null) },
+        mensaje = { "⚡ ${tipo.etiqueta} de ${Formato.cop(monto)} anotado" }
+    )
+
+    // ---------- Respaldo en una carpeta del celular ----------
+
+    val carpetaRespaldo: StateFlow<String> = preferencias.carpetaRespaldo
+
+    fun elegirCarpetaRespaldo(uri: Uri) {
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        preferencias.cambiarCarpetaRespaldo(uri.toString())
+        respaldarEnCarpeta()
+    }
+
+    fun respaldarEnCarpeta() = ejecutar(
+        accion = { copiarACarpeta() ?: throw IllegalStateException("Primero elige la carpeta") },
+        mensaje = { nombre -> "💾 Copia guardada en tu carpeta: $nombre" }
+    )
+
+    /** Escribe el respaldo JSON en la carpeta elegida. Devuelve el nombre del archivo, o null si no hay carpeta. */
+    private suspend fun copiarACarpeta(): String? {
+        val texto = preferencias.carpetaRespaldo.value
+        if (texto.isBlank()) return null
+        val json = respaldo.exportarJson()
+        return withContext(Dispatchers.IO) {
+            val arbol = Uri.parse(texto)
+            val padre = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                arbol, android.provider.DocumentsContract.getTreeDocumentId(arbol)
+            )
+            val nombre = "MiPropioBanco_${java.time.LocalDate.now()}.json"
+            val nuevo = android.provider.DocumentsContract.createDocument(app.contentResolver, padre, "application/json", nombre)
+                ?: throw IllegalStateException("No se pudo crear el archivo en la carpeta")
+            app.contentResolver.openOutputStream(nuevo)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                ?: throw IllegalStateException("No se pudo escribir en la carpeta")
+            nombre
+        }
+    }
 
     // ---------- Metas de ahorro ----------
 
@@ -1038,6 +1178,9 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         }
         preferencias.marcarRespaldoAuto(hoy)
         listarRespaldos()
+        runCatching { copiarACarpeta() }.onFailure {
+            com.mipropiobanco.util.RegistroErrores.anotar("No se pudo copiar el respaldo a la carpeta", it)
+        }
     }
 
     fun restaurarRespaldoAuto(dia: String) = ejecutar(

@@ -3,6 +3,7 @@
 package com.mipropiobanco.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -136,6 +137,51 @@ fun DashboardScreen(
                 Accion("Ingreso", Icons.Filled.AddCircle, MaterialTheme.colorScheme.primary) { alNuevoMovimiento("INGRESO") }
                 Accion("Hablar", Icons.Filled.Mic, MaterialTheme.colorScheme.secondary) { alNuevoMovimiento("VOZ") }
                 Accion("Recibo", Icons.Filled.CameraAlt, MaterialTheme.colorScheme.tertiary) { alNuevoMovimiento("FOTO") }
+            }
+        }
+
+        // ---- Rápidos: lo que más repites, en 1 toque ----
+        val desde = Formato.aMillis(LocalDate.now().minusDays(90))
+        val rapidos = movimientos
+            .filter { it.fecha >= desde && it.tipo != TipoMovimiento.TRASLADO.name && it.categoriaId > 0L }
+            .groupBy { listOf(it.tipo, it.categoriaId, it.monto, it.medioId) }
+            .filter { it.value.size >= 2 }
+            .entries.sortedByDescending { it.value.size }
+            .take(8)
+            .map { it.value.maxBy { m -> m.fecha } }
+        if (rapidos.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("⚡ En 1 toque", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    ) {
+                        rapidos.forEach { r ->
+                            val c = catMap[r.categoriaId]
+                            val esGasto = r.tipo == TipoMovimiento.GASTO.name
+                            Surface(
+                                onClick = {
+                                    vm.registrarRapido(
+                                        if (esGasto) TipoMovimiento.GASTO else TipoMovimiento.INGRESO,
+                                        r.monto, r.categoriaId, r.medioId, r.nota
+                                    )
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                    Text("${c?.icono ?: "•"} ${c?.nombre ?: ""}", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                    Text(
+                                        (if (esGasto) "−" else "+") + Formato.cop(r.monto),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (esGasto) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

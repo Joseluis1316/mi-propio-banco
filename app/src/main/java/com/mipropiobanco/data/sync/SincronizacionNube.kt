@@ -135,7 +135,7 @@ class SincronizacionNube(
         alcance.launch {
             val fuentes: List<Flow<Any>> = listOf(
                 repo.aportes, repo.prestamosConPagos, repo.deudas, repo.tipos, prefs.presupuestoDeudas,
-                finanzas.movimientos, finanzas.categorias, finanzas.medios, finanzas.plantillas
+                finanzas.movimientos, finanzas.categorias, finanzas.medios, finanzas.plantillas, prefs.metasJson
             )
             combine(fuentes) { valores -> valores.toList() }
                 .distinctUntilChanged()
@@ -160,9 +160,10 @@ class SincronizacionNube(
     private suspend fun subir(uid: String) = candado.withLock {
         _estado.value = EstadoNube.Sincronizando
         try {
+            // Comprimido: un documento de Firestore no puede pasar de 1 MB; así caben años de datos.
             val datos = mapOf(
                 "app" to "MiPropioBanco",
-                "datos" to respaldo.exportarJson(),
+                "datosGz" to comprimir(respaldo.exportarJson()),
                 "modificado" to prefs.localModificado(),
                 "dispositivo" to "${Build.MANUFACTURER} ${Build.MODEL}"
             )
@@ -192,7 +193,7 @@ class SincronizacionNube(
     private suspend fun reconciliar(uid: String) {
         _estado.value = EstadoNube.Sincronizando
         val doc = documento(uid).get().await()
-        val remoto = doc.getString("datos")
+        val remoto = doc.getString("datosGz")?.let { descomprimir(it) } ?: doc.getString("datos")
         val remotoModificado = doc.getLong("modificado") ?: 0L
         if (remoto != null && (respaldo.estaVacio() || remotoModificado > prefs.localModificado())) {
             importando = true
@@ -249,6 +250,17 @@ class SincronizacionNube(
     }
 
     companion object {
+        fun comprimir(texto: String): String {
+            val bytes = java.io.ByteArrayOutputStream()
+            java.util.zip.GZIPOutputStream(bytes).use { it.write(texto.toByteArray(Charsets.UTF_8)) }
+            return android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP)
+        }
+
+        fun descomprimir(base64: String): String {
+            val bytes = android.util.Base64.decode(base64, android.util.Base64.NO_WRAP)
+            return java.util.zip.GZIPInputStream(bytes.inputStream()).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }
+
         fun mensajeError(e: Throwable): String = when (e) {
             is FirebaseAuthWeakPasswordException -> "La contraseña debe tener al menos 6 caracteres"
             is FirebaseAuthUserCollisionException -> "Ya existe una cuenta con ese correo. Inicia sesión."

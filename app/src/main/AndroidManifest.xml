@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Recordatorios de pagos y presupuesto (Android 13+ lo pide al usuario). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Para pedir que no se apague la lectura de notificaciones y los recordatorios. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Para abrir el dictado por voz de Google en Android 11 o superior. -->
     <queries>

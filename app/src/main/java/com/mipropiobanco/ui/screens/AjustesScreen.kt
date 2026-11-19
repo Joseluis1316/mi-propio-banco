@@ -88,6 +88,14 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { vm.exportarCsv(it) } }
 
+    val elegirCarpeta = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri -> uri?.let { vm.elegirCarpetaRespaldo(it) } }
+
+    val exportarErrores = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri -> uri?.let { vm.exportarErrores(it) } }
+
     val importarJson = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.importarJson(it) } }
@@ -161,6 +169,33 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                val pm = contexto.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                var sinRestriccion by remember { mutableStateOf(pm.isIgnoringBatteryOptimizations(contexto.packageName)) }
+                androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                    sinRestriccion = pm.isIgnoringBatteryOptimizations(contexto.packageName)
+                    onPauseOrDispose { }
+                }
+                if (!sinRestriccion) {
+                    Seccion("🔋 Batería") {
+                        Text(
+                            "Tu celular puede apagar la lectura de Nequi/Daviplata y los recordatorios para ahorrar batería. Permite que Mi Propio Banco funcione en segundo plano.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        FilledTonalButton(
+                            onClick = {
+                                runCatching {
+                                    contexto.startActivity(
+                                        android.content.Intent(
+                                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                            android.net.Uri.parse("package:${contexto.packageName}")
+                                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Permitir en segundo plano") }
+                    }
+                }
                 Seccion("🔒 Seguridad y privacidad") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -181,6 +216,21 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                             )
                         }
                         androidx.compose.material3.Switch(checked = ocultar, onCheckedChange = { vm.cambiarOcultarSaldos(it) })
+                    }
+                    val carpeta by vm.carpetaRespaldo.collectAsStateWithLifecycle()
+                    Text("💾 Copia en una carpeta del celular", fontWeight = FontWeight.Medium)
+                    Text(
+                        if (carpeta.isBlank()) "Elige una carpeta (por ejemplo Documentos) y cada día se guarda ahí una copia que sobrevive aunque borres la app."
+                        else "✅ Cada día se guarda una copia en la carpeta que elegiste.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { elegirCarpeta.launch(null) }) {
+                            Text(if (carpeta.isBlank()) "Elegir carpeta" else "Cambiar carpeta")
+                        }
+                        if (carpeta.isNotBlank()) {
+                            FilledTonalButton(onClick = { vm.respaldarEnCarpeta() }) { Text("Copiar ahora") }
+                        }
                     }
                     Text("Copias automáticas (una por día, se guardan 7)", fontWeight = FontWeight.Medium)
                     if (respaldos.isEmpty()) {
@@ -306,6 +356,20 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                     )
                     OutlinedButton(onClick = alConfigFinanzas, modifier = Modifier.fillMaxWidth()) {
                         Text("Plantillas, categorías y medios de pago")
+                    }
+                }
+            }
+            item {
+                Seccion("🧰 Diagnóstico") {
+                    val errores = remember { vm.cantidadErrores() }
+                    Text(
+                        if (errores == 0) "No hay errores registrados. 👌"
+                        else "Hay $errores errores registrados. Expórtalos para revisarlos.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { exportarErrores.launch("errores_mi_propio_banco.txt") }) { Text("Exportar registro") }
+                        if (errores > 0) OutlinedButton(onClick = { vm.borrarErrores() }) { Text("Borrar") }
                     }
                 }
             }
