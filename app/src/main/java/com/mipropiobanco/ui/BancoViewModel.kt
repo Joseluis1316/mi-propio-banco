@@ -916,23 +916,31 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         tasaEA: Double,
         tasaMoraEA: Double,
         fechaDesembolso: Long,
+        prestatario: String = "",
         alCrear: (Long) -> Unit
     ) = ejecutar(
         accion = {
-            val id = repo.crearPrestamo(concepto, monto, cuotas, periodicidad, tipo, tasaEA, tasaMoraEA, fechaDesembolso)
-            if (preferencias.conectarBanco.value) {
+            val id = repo.crearPrestamo(concepto, monto, cuotas, periodicidad, tipo, tasaEA, tasaMoraEA, fechaDesembolso, prestatario)
+            // Solo el autopréstamo entra a mis cuentas; si le presto a otro, la plata sale de la bóveda hacia esa persona.
+            if (preferencias.conectarBanco.value && prestatario.isBlank()) {
                 finanzas.anotarDeMiBanco(TipoMovimiento.INGRESO, monto, fechaDesembolso, "Autopréstamo: $concepto", "Préstamo de Mi banco")
             }
             id
         },
-        mensaje = { "Autopréstamo aprobado: salieron ${Formato.cop(monto)} de la bóveda" },
+        mensaje = {
+            if (prestatario.isBlank()) "Autopréstamo aprobado: salieron ${Formato.cop(monto)} de la bóveda"
+            else "Préstamo a ${prestatario.trim()} aprobado: salieron ${Formato.cop(monto)} de la bóveda"
+        },
         alTerminar = alCrear
     )
 
     fun pagarCuota(prestamoId: Long, fechaPago: Long) = ejecutar(
         accion = {
+            val esAutoprestamo = repo.prestamosConPagos.first()
+                .firstOrNull { it.prestamo.id == prestamoId }?.prestamo?.prestatario.isNullOrBlank()
             val r = repo.registrarPagoCuota(prestamoId, fechaPago)
-            if (preferencias.conectarBanco.value) {
+            // Si la cuota la paga otra persona, entra a la bóveda: no sale de mis cuentas.
+            if (preferencias.conectarBanco.value && esAutoprestamo) {
                 val total = r.pago.capital + r.pago.interes + r.pago.mora
                 finanzas.anotarDeMiBanco(TipoMovimiento.GASTO, total, fechaPago, "Cuota ${r.pago.numeroCuota} a Mi banco", "Cuota a Mi banco")
             }

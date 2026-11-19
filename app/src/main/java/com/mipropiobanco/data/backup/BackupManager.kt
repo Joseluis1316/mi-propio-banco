@@ -75,6 +75,7 @@ class BackupManager(
                         .put("tipo", p.tipo)
                         .put("tasaEA", p.tasaEA)
                         .put("tasaMoraEA", p.tasaMoraEA)
+                        .put("prestatario", p.prestatario)
                 )
             }
         })
@@ -261,7 +262,8 @@ class BackupManager(
                 periodicidad = periodicidad.name,
                 tipo = it.optString("tipo", "Personalizado"),
                 tasaEA = tasaEA,
-                tasaMoraEA = if (it.has("tasaMoraEA")) it.getDouble("tasaMoraEA") else tasaEA
+                tasaMoraEA = if (it.has("tasaMoraEA")) it.getDouble("tasaMoraEA") else tasaEA,
+                prestatario = it.optString("prestatario", "")
             )
         }
         val pagos = raiz.getJSONArray("pagos").objetos().map {

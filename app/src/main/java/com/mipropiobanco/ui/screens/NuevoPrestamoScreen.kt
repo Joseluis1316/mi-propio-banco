@@ -59,11 +59,12 @@ import com.mipropiobanco.util.Formato
 private const val LIMITE_RECOMENDADO = 0.70
 
 @Composable
-fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long) -> Unit) {
+fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long) -> Unit, aOtro: Boolean = false) {
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val tipos by vm.tipos.collectAsStateWithLifecycle()
 
     var concepto by rememberSaveable { mutableStateOf("") }
+    var prestatario by rememberSaveable { mutableStateOf("") }
     var monto by rememberSaveable { mutableStateOf("") }
     var tipoNombre by rememberSaveable { mutableStateOf("") }
     var tasa by rememberSaveable { mutableStateOf("") }
@@ -99,7 +100,7 @@ fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long
     val errorTasa = if (tasaValor == null || tasaValor < 0.0 || tasaValor > 300.0) "Tasa entre 0% y 300% E.A." else null
     val errorMora = if (moraValor == null || moraValor < 0.0 || moraValor > 300.0) "Tasa entre 0% y 300% E.A." else null
 
-    val valido = concepto.isNotBlank() && montoValor > 0L && errorMonto == null && cuotasValor in 1..1000 &&
+    val valido = (!aOtro || prestatario.isNotBlank()) && concepto.isNotBlank() && montoValor > 0L && errorMonto == null && cuotasValor in 1..1000 &&
         tasaValor != null && errorTasa == null && moraValor != null && errorMora == null
 
     val tasaPeriodo = Tasas.periodoDesdeEA(tasaValor ?: 0.0, periodicidad)
@@ -110,10 +111,19 @@ fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long
     val totalIntereses = tabla.sumOf { it.interes }
 
     Column(Modifier.fillMaxSize()) {
-        Encabezado("Nuevo autopréstamo", alVolver = alVolver)
+        Encabezado(if (aOtro) "Prestarle a alguien" else "Nuevo autopréstamo", alVolver = alVolver)
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (aOtro) {
+                        OutlinedTextField(
+                            value = prestatario,
+                            onValueChange = { prestatario = it.take(40) },
+                            label = { Text("¿A quién le prestas?") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     OutlinedTextField(
                         value = concepto,
                         onValueChange = { concepto = it.take(60) },
@@ -244,11 +254,12 @@ fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long
     if (confirmar && tabla.isNotEmpty() && tasaValor != null && moraValor != null) {
         AlertDialog(
             onDismissRequest = { confirmar = false },
-            title = { Text("¿Aprobar autopréstamo?") },
+            title = { Text(if (aOtro) "¿Prestarle a ${prestatario.trim()}?" else "¿Aprobar autopréstamo?") },
             text = {
                 Text(
                     "Saldrán ${Formato.cop(montoValor)} de la bóveda para «${concepto.trim()}». " +
-                        "Te comprometes a pagar ${periodicidad.cantidad(cuotasValor)} de cuota de " +
+                        (if (aOtro) "${prestatario.trim()} se compromete a pagar" else "Te comprometes a pagar") +
+                        " ${periodicidad.cantidad(cuotasValor)} de cuota de " +
                         "${Formato.cop(tabla.first().cuota)} al ${Formato.tasa(tasaValor)} E.A. " +
                         "Si te atrasas, pagarás mora al ${Formato.tasa(moraValor)} E.A. por día."
                 )
@@ -258,7 +269,8 @@ fun NuevoPrestamoScreen(vm: BancoViewModel, alVolver: () -> Unit, alCrear: (Long
                     confirmar = false
                     vm.crearPrestamo(
                         concepto, montoValor, cuotasValor, periodicidad,
-                        tipoNombre.ifEmpty { "Personalizado" }, tasaValor, moraValor, fechaDesembolso, alCrear
+                        tipoNombre.ifEmpty { "Personalizado" }, tasaValor, moraValor, fechaDesembolso,
+                        if (aOtro) prestatario else "", alCrear
                     )
                 }) { Text("Aprobar") }
             },

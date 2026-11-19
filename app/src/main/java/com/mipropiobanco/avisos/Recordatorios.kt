@@ -58,7 +58,10 @@ class Recordatorios(contexto: Context, parametros: WorkerParameters) : Coroutine
                     avisos.add("⚠️ Cuota de ${p.prestamo.concepto} atrasada ${e.diasAtraso} días")
                 } else if (dias in 0L..2L) {
                     val cuando = if (dias == 0L) "vence hoy" else "vence en $dias días"
-                    avisos.add("🏦 Cuota de ${p.prestamo.concepto}: ${Formato.copReal(e.totalAPagar)} $cuando")
+                    avisos.add(
+                        if (p.prestamo.prestatario.isNotBlank()) "🏦 ${p.prestamo.prestatario} te debe pagar ${Formato.copReal(e.totalAPagar)} ($cuando)"
+                        else "🏦 Cuota de ${p.prestamo.concepto}: ${Formato.copReal(e.totalAPagar)} $cuando"
+                    )
                 }
             }
         }

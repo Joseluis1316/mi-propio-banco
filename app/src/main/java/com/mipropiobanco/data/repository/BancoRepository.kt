@@ -105,7 +105,8 @@ class BancoRepository(private val db: BancoDatabase) {
         tipo: String,
         tasaEA: Double,
         tasaMoraEA: Double,
-        fechaDesembolso: Long
+        fechaDesembolso: Long,
+        prestatario: String = ""
     ): Long = db.withTransaction {
         require(concepto.isNotBlank()) { "Escribe el concepto del préstamo" }
         require(monto > 0L) { "El monto debe ser mayor que cero" }
@@ -127,6 +128,7 @@ class BancoRepository(private val db: BancoDatabase) {
                 fechaCreacion = fechaDesembolso,
                 periodicidad = periodicidad.name,
                 tipo = tipo,
+                prestatario = prestatario.trim(),
                 tasaEA = tasaEA,
                 tasaMoraEA = tasaMoraEA
             )

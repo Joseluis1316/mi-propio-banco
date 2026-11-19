@@ -60,6 +60,7 @@ private object Rutas {
     const val BANDEJA = "bandeja"
     const val METAS = "metas"
     const val NUEVO_PRESTAMO = "nuevo_prestamo"
+    const val NUEVO_PRESTAMO_OTRO = "nuevo_prestamo_otro"
     const val DETALLE_PRESTAMO = "prestamo"
     const val DETALLE_DEUDA = "deuda"
 }
@@ -194,6 +195,7 @@ fun AppNavegacion(vm: BancoViewModel) {
                     pestanaInicial = e.arguments?.getInt("pestana") ?: 0,
                     abrirAporte = e.arguments?.getBoolean("nuevo") ?: false,
                     alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alPrestarAOtro = { nav.navigate(Rutas.NUEVO_PRESTAMO_OTRO) },
                     alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
                 )
             }
@@ -226,6 +228,18 @@ fun AppNavegacion(vm: BancoViewModel) {
             }
             composable(Rutas.CONFIG_FINANZAS) {
                 ConfiguracionFinanzasScreen(vm = vm, alVolver = { nav.popBackStack() })
+            }
+            composable(Rutas.NUEVO_PRESTAMO_OTRO) {
+                NuevoPrestamoScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alCrear = { id ->
+                        nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") {
+                            popUpTo(Rutas.NUEVO_PRESTAMO_OTRO) { inclusive = true }
+                        }
+                    },
+                    aOtro = true
+                )
             }
             composable(Rutas.NUEVO_PRESTAMO) {
                 NuevoPrestamoScreen(

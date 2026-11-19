@@ -331,7 +331,7 @@ fun DashboardScreen(
         item { TarjetaMiBanco(resumen, alNuevoAporte, alNuevoPrestamo) }
 
         if (activos.isNotEmpty()) {
-            item { Titulo("Autopréstamos activos") }
+            item { Titulo("Préstamos activos de Mi banco") }
             items(activos, key = { it.prestamo.id }) { item ->
                 TarjetaPrestamo(item = item, ahora = ahora, alAbrir = { alAbrirPrestamo(item.prestamo.id) })
             }

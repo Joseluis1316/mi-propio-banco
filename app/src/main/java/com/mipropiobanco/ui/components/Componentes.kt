@@ -185,7 +185,7 @@ fun TarjetaPrestamo(item: PrestamoConPagos, ahora: Long, alAbrir: () -> Unit, mo
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    p.concepto,
+                    if (p.prestatario.isNotBlank()) "👤 ${p.prestatario} · ${p.concepto}" else p.concepto,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),

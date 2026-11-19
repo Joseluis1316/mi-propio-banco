@@ -73,7 +73,7 @@ fun DetallePrestamoScreen(vm: BancoViewModel, prestamoId: Long, alVolver: () -> 
     var confirmacion by remember { mutableStateOf<Confirmacion?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        Encabezado(p.concepto, alVolver = alVolver)
+        Encabezado(if (p.prestatario.isNotBlank()) "👤 ${p.prestatario} · ${p.concepto}" else p.concepto, alVolver = alVolver)
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp)) {
             item {
                 Card(

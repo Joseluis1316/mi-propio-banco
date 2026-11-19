@@ -36,8 +36,9 @@ import com.mipropiobanco.ui.components.rememberAhora
 private enum class FiltroPrestamos(val etiqueta: String) { ACTIVOS("Activos"), PAGADOS("Pagados"), TODOS("Todos") }
 
 @Composable
-fun PrestamosScreen(vm: BancoViewModel, alNuevo: () -> Unit, alAbrir: (Long) -> Unit) {
-    val prestamos by vm.prestamos.collectAsStateWithLifecycle()
+fun PrestamosScreen(vm: BancoViewModel, alNuevo: () -> Unit, alAbrir: (Long) -> Unit, aOtros: Boolean = false) {
+    val todos by vm.prestamos.collectAsStateWithLifecycle()
+    val prestamos = todos.filter { it.prestamo.prestatario.isNotBlank() == aOtros }
     val ahora = rememberAhora()
     var filtro by rememberSaveable { mutableStateOf(FiltroPrestamos.ACTIVOS) }
     val visibles = when (filtro) {
@@ -82,7 +83,7 @@ fun PrestamosScreen(vm: BancoViewModel, alNuevo: () -> Unit, alAbrir: (Long) -> 
         ExtendedFloatingActionButton(
             onClick = alNuevo,
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("Nuevo préstamo") },
+            text = { Text(if (aOtros) "Prestarle a alguien" else "Nuevo autopréstamo") },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)

@@ -46,7 +46,9 @@ data class PrestamoEntity(
     val periodicidad: String = "MENSUAL",
     val tipo: String = "Personalizado",
     val tasaEA: Double = 0.0,
-    val tasaMoraEA: Double = 0.0
+    val tasaMoraEA: Double = 0.0,
+    /** A quién le presta Mi banco. Vacío = autopréstamo (a mí mismo). */
+    val prestatario: String = ""
 )
 
 /** Pago de una cuota: el capital regresa a la bóveda; interés y mora se suman como ganancia. */
