@@ -295,25 +295,7 @@ fun AjustesScreen(vm: BancoViewModel, alVolver: () -> Unit, alConfigFinanzas: ()
                 }
             }
             item {
-                Seccion("📥 Correos de Bancolombia") {
-                    InstruccionesGmail(vm.uidNube) {
-                        vm.uidNube?.let { portapapeles.setText(androidx.compose.ui.text.AnnotatedString(it)) }
-                    }
-                    val urlScript by vm.urlScript.collectAsStateWithLifecycle()
-                    var url by remember(urlScript) { mutableStateOf(urlScript) }
-                    androidx.compose.material3.OutlinedTextField(
-                        value = url,
-                        onValueChange = { url = it },
-                        label = { Text("Enlace del script (para 🔄 Buscar correos ahora)") },
-                        placeholder = { Text("https://script.google.com/macros/s/…/exec") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (url.trim() != urlScript) {
-                        OutlinedButton(onClick = { vm.cambiarUrlScript(url) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Guardar enlace")
-                        }
-                    }
+                Seccion("📲 Lo que se registra solo") {
                     val gastosSolos by vm.gastosSolos.collectAsStateWithLifecycle()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {

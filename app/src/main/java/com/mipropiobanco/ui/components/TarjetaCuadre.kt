@@ -133,7 +133,7 @@ fun TarjetaCuadre(
                                 Text("🤝 Alguien me prestó (es deuda)")
                             }
                             Text(
-                                "Si crees que hay gastos repetidos, revisa primero 🧹 Limpiar en Correos del banco.",
+                                "Si crees que hay gastos repetidos, revisa primero 🧹 Limpiar en Por revisar.",
                                 style = MaterialTheme.typography.labelSmall
                             )
                         } else {

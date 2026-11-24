@@ -52,25 +52,12 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
     var limpieza by remember { mutableStateOf<com.mipropiobanco.data.repository.FinanzasRepository.Limpieza?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        Encabezado("📥 Correos por revisar", alVolver = alVolver)
+        Encabezado("📲 Por revisar", alVolver = alVolver)
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (correo != null) {
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        FilledTonalButton(
-                            onClick = { vm.buscarCorreosAhora() },
-                            enabled = !buscando,
-                            modifier = Modifier.weight(1f)
-                        ) { Text(if (buscando) "Buscando…" else "🔄 Buscar correos ahora") }
-                        androidx.compose.material3.OutlinedButton(
-                            onClick = { vm.buscarCorreosAhora(todos = true) },
-                            enabled = !buscando
-                        ) { Text("Releer todos") }
-                    }
-                }
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Row(
@@ -91,19 +78,16 @@ fun BandejaScreen(vm: BancoViewModel, alVolver: () -> Unit, alComoConectar: () -
                 item {
                     EstadoVacio(
                         "Necesitas iniciar sesión",
-                        "Los correos del banco llegan a tu nube. Inicia sesión en Ajustes › Cuenta y nube."
+                        "Lo que la app lee de tus notificaciones llega a tu nube. Inicia sesión en Ajustes › Cuenta y nube."
                     )
                 }
             } else if (correos.isEmpty()) {
                 item {
                     EstadoVacio(
                         "Todo al día",
-                        "Cuando Bancolombia te envíe una alerta (pagaste, compraste, transferiste, recibiste, retiraste), " +
-                            "aparecerá aquí en unos minutos para que la confirmes."
+                        "Cuando Nequi o Daviplata te notifiquen un pago o una transferencia, aparecerá aquí para que lo confirmes. " +
+                            "Actívalo en Ajustes › Avisos y lectura automática."
                     )
-                }
-                item {
-                    TextButton(onClick = alComoConectar) { Text("¿Cómo conectar mi Gmail?") }
                 }
             }
             items(correos, key = { it.id }) { c ->

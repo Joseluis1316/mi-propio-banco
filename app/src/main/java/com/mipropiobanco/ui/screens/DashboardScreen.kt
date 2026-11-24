@@ -275,7 +275,7 @@ fun DashboardScreen(
 
         // ---- Avisos ----
         val avisos = buildList {
-            if (bandeja.isNotEmpty()) add(Aviso("📥", "${bandeja.size} movimientos de tus correos por revisar", alBandeja))
+            if (bandeja.isNotEmpty()) add(Aviso("📲", "${bandeja.size} movimientos por revisar", alBandeja))
             if (porClasificar > 0) add(Aviso("🏷️", "$porClasificar gastos por clasificar", alVerMovimientos))
             if (porRegistrar > 0) add(Aviso("📌", "$porRegistrar gastos fijos por registrar", alVerMovimientos))
             excedidas.forEach { c ->

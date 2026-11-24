@@ -272,16 +272,10 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                         ) {
                             Text(
-                                "📥 Tienes ${bandeja.size} movimientos de tus correos por revisar",
+                                "📲 Tienes ${bandeja.size} movimientos por revisar",
                                 modifier = Modifier.padding(14.dp),
                                 fontWeight = FontWeight.SemiBold
                             )
-                        }
-                    }
-                } else {
-                    item {
-                        androidx.compose.material3.OutlinedButton(onClick = alBandeja, modifier = Modifier.fillMaxWidth()) {
-                            Text("📥 Correos del banco (buscar / releer)")
                         }
                     }
                 }
