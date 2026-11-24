@@ -312,6 +312,8 @@ class FinanzasRepository(private val db: BancoDatabase) {
     /** Ingreso que en realidad es plata prestada por otra persona (se vuelve deuda). */
     suspend fun categoriaPrestamosRecibidos(): Long = categoriaPorNombre("Préstamos recibidos", TipoMovimiento.INGRESO, "🤝")
 
+    suspend fun categoriaSalario(): Long = categoriaPorNombre("Salario", TipoMovimiento.INGRESO, "💼")
+
     suspend fun categoriaOtrosIngresos(): Long = categoriaPorNombre("Otros ingresos", TipoMovimiento.INGRESO, "➕")
 
     /** Categoría para los gastos que llegan por correo y aún no clasificas. */

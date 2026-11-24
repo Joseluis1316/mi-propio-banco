@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -1134,6 +1135,47 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             nombre
         }
     }
+
+    // ---------- Presupuesto por quincenas ----------
+
+    /** Resumen del mes por quincenas (se recalcula solo cuando cambian los datos, no en cada pantalla). */
+    fun presupuestoDe(mes: java.time.YearMonth): kotlinx.coroutines.flow.Flow<com.mipropiobanco.domain.ResumenPresupuestoMes> =
+        kotlinx.coroutines.flow.combine(
+            kotlinx.coroutines.flow.combine(movimientos, medios, categorias, plantillas) { a, b, c, d -> listOf(a, b, c, d) },
+            kotlinx.coroutines.flow.combine(deudas, prestamos, metas) { a, b, c -> listOf(a, b, c) }
+        ) { x, y ->
+            @Suppress("UNCHECKED_CAST")
+            com.mipropiobanco.domain.PresupuestoQuincenal.construir(
+                mes = mes,
+                hoy = java.time.LocalDate.now(),
+                movimientos = x[0] as List<MovimientoEntity>,
+                medios = x[1] as List<MedioPagoEntity>,
+                categorias = x[2] as List<com.mipropiobanco.data.local.CategoriaEntity>,
+                plantillas = x[3] as List<PlantillaEntity>,
+                deudas = y[0] as List<DeudaConAbonos>,
+                prestamos = y[1] as List<PrestamoConPagos>,
+                metas = y[2] as List<com.mipropiobanco.domain.Meta>
+            )
+        }.flowOn(Dispatchers.Default)
+
+    /** Mis pagos: crea el salario como dos ingresos fijos mensuales (uno por quincena). */
+    fun configurarSalario(parte1: Long, dia1: Int, parte2: Long, dia2: Int) = ejecutar(
+        accion = {
+            require(parte1 > 0L || parte2 > 0L) { "Escribe cuánto te pagan" }
+            val medio = finanzas.medioPorDefecto() ?: throw IllegalStateException("Crea primero una cuenta")
+            val cat = finanzas.categoriaSalario()
+            val mes = java.time.YearMonth.now()
+            listOf(Triple("Quincena 1", parte1, dia1), Triple("Quincena 2", parte2, dia2)).forEach { (nombre, monto, dia) ->
+                if (monto <= 0L) return@forEach
+                val inicio = com.mipropiobanco.domain.PresupuestoQuincenal.diaEnMes(mes, dia)
+                finanzas.guardarPlantilla(
+                    null, "Salario · $nombre (día $dia)", TipoMovimiento.INGRESO, monto, cat, medio.id,
+                    Periodicidad.MENSUAL, Formato.aMillis(inicio), false, true
+                )
+            }
+        },
+        mensaje = { "💼 Salario configurado: aparece en tu presupuesto por quincenas" }
+    )
 
     // ---------- Metas de ahorro ----------
 

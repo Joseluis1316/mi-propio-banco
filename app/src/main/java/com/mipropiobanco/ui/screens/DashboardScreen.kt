@@ -73,8 +73,11 @@ fun DashboardScreen(
     alVerMovimientos: () -> Unit,
     alAjustes: () -> Unit,
     alBandeja: () -> Unit = {},
-    alMetas: () -> Unit = {}
+    alMetas: () -> Unit = {},
+    alPresupuesto: () -> Unit = {}
 ) {
+    val flujoPlan = androidx.compose.runtime.remember { vm.presupuestoDe(YearMonth.now()) }
+    val planMes by flujoPlan.collectAsStateWithLifecycle(initialValue = null)
     val resumen by vm.resumen.collectAsStateWithLifecycle()
     val prestamos by vm.prestamos.collectAsStateWithLifecycle()
     val activos = prestamos.filter { !it.prestamo.pagado }
@@ -135,6 +138,41 @@ fun DashboardScreen(
             val cuadre = com.mipropiobanco.domain.Cuadre.de(movimientos, medios, categorias, YearMonth.now())
             com.mipropiobanco.ui.components.TarjetaCuadre(cuadre, "🧮 Cuadre de ${Formato.mesAnio(YearMonth.now())}", alCorregirInicio = { real, origen, acreedor -> vm.corregirInicio(YearMonth.now(), real, origen, acreedor) }) { medio, monto, origen, acreedor ->
                 vm.explicarFaltante(medio, monto, origen, acreedor)
+            }
+        }
+
+        // ---- Quincena actual ----
+        planMes?.let { pm ->
+            item {
+                val q = pm.de(com.mipropiobanco.domain.PresupuestoQuincenal.quincenaDe(java.time.LocalDate.now()))
+                val colorQ = when (q.semaforo) {
+                    com.mipropiobanco.domain.Semaforo.VERDE -> MaterialTheme.colorScheme.primary
+                    com.mipropiobanco.domain.Semaforo.AMARILLO -> MaterialTheme.colorScheme.tertiary
+                    com.mipropiobanco.domain.Semaforo.ROJO -> MaterialTheme.colorScheme.error
+                }
+                val vencidos = q.obligaciones.count { it.estado == com.mipropiobanco.domain.EstadoPago.VENCIDO }
+                androidx.compose.material3.Surface(
+                    onClick = alPresupuesto,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("📆 ${q.quincena.etiqueta} · libre", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text(Formato.cop(q.libre), color = colorQ, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        }
+                        Text(
+                            when {
+                                vencidos > 0 -> "⚠️ $vencidos pago(s) vencido(s) · pendiente ${Formato.cop(q.pendiente)}"
+                                q.faltante > 0L -> "🔴 Te faltan ${Formato.cop(q.faltante)} para cubrir la quincena"
+                                q.pendiente > 0L -> "Por pagar en la quincena: ${Formato.cop(q.pendiente)}"
+                                else -> "Sin pagos pendientes en esta quincena ✓"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
 

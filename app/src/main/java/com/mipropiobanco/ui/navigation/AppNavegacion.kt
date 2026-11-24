@@ -44,6 +44,7 @@ import com.mipropiobanco.ui.screens.DetallePrestamoScreen
 import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.LoginScreen
 import com.mipropiobanco.ui.screens.MetasScreen
+import com.mipropiobanco.ui.screens.PresupuestoScreen
 import com.mipropiobanco.ui.screens.IngresosScreen
 import com.mipropiobanco.ui.screens.MovimientosScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
@@ -53,6 +54,7 @@ private object Rutas {
     const val MOVIMIENTOS = "movimientos"
     const val INGRESOS = "ingresos"
     const val CALENDARIO = "calendario"
+    const val PRESUPUESTO = "presupuesto"
     const val BANCO = "banco"
     const val DEUDAS = "deudas"
     const val AJUSTES = "ajustes"
@@ -71,7 +73,7 @@ private val destinosPrincipales = listOf(
     Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
     Destino(Rutas.INGRESOS, "Ingresos", Icons.AutoMirrored.Filled.TrendingUp),
     Destino(Rutas.MOVIMIENTOS, "Gastos", Icons.Filled.AccountBalanceWallet),
-    Destino(Rutas.CALENDARIO, "Agenda", Icons.Filled.CalendarMonth),
+    Destino(Rutas.PRESUPUESTO, "Plan", Icons.Filled.CalendarMonth),
     Destino(Rutas.BANCO, "Banco", Icons.Filled.Savings),
     Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard)
 )
@@ -147,7 +149,8 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alVerMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
                     alAjustes = { nav.navigate(Rutas.AJUSTES) },
                     alBandeja = { nav.navigate(Rutas.BANDEJA) },
-                    alMetas = { nav.navigate(Rutas.METAS) }
+                    alMetas = { nav.navigate(Rutas.METAS) },
+                    alPresupuesto = { nav.irAPestana(Rutas.PRESUPUESTO) }
                 )
             }
             composable(Rutas.INGRESOS) {
@@ -172,6 +175,15 @@ fun AppNavegacion(vm: BancoViewModel) {
                     nuevoInicial = e.arguments?.getString("nuevo").orEmpty(),
                     alConfigurar = { nav.navigate(Rutas.CONFIG_FINANZAS) },
                     alBandeja = { nav.navigate(Rutas.BANDEJA) }
+                )
+            }
+            composable(Rutas.PRESUPUESTO) {
+                PresupuestoScreen(
+                    vm = vm,
+                    alAbrirDeuda = { id -> nav.navigate("${Rutas.DETALLE_DEUDA}/$id") },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alMetas = { nav.navigate(Rutas.METAS) },
+                    alCalendario = { nav.navigate(Rutas.CALENDARIO) }
                 )
             }
             composable(Rutas.CALENDARIO) {

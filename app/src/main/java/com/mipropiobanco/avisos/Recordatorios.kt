@@ -79,6 +79,29 @@ class Recordatorios(contexto: Context, parametros: WorkerParameters) : Coroutine
             }
         }
 
+        // Presupuesto por quincenas: quincena en rojo y día de pago.
+        runCatching {
+            val hoy = java.time.LocalDate.now()
+            val pm = com.mipropiobanco.domain.PresupuestoQuincenal.construir(
+                mes = YearMonth.now(),
+                hoy = hoy,
+                movimientos = app.finanzas.movimientos.first(),
+                medios = app.finanzas.medios.first(),
+                categorias = app.finanzas.categorias.first(),
+                plantillas = app.finanzas.plantillas.first(),
+                deudas = app.repositorio.deudas.first(),
+                prestamos = app.repositorio.prestamosConPagos.first(),
+                metas = com.mipropiobanco.domain.MetasJson.leer(app.preferencias.metasJson.value)
+            )
+            val q = pm.de(com.mipropiobanco.domain.PresupuestoQuincenal.quincenaDe(hoy))
+            if (q.faltante > 0L) {
+                avisos.add("🔴 ${q.quincena.etiqueta}: te faltan ${Formato.copReal(q.faltante)} para cubrir los pagos")
+            }
+            q.ingresosEsperados.filter { !it.recibido && !it.fecha.isAfter(hoy) }.forEach { i ->
+                avisos.add("💼 ¿Ya te pagaron «${i.nombre}»? Regístralo en Plan")
+            }
+        }
+
         if (avisos.isNotEmpty()) notificar(applicationContext, avisos)
         return Result.success()
     }
