@@ -229,3 +229,51 @@ object Asesor {
         )
     }
 }
+
+/** Cobro que se repite cada mes (suscripciones, planes, cuotas): lo detecta solo. */
+data class CobroRecurrente(val nombre: String, val montoMensual: Long, val meses: Int, val ultimo: LocalDate)
+
+object Analisis {
+
+    /** Gasto del día a día acumulado día por día del mes (para la curva "este mes vs mes pasado"). */
+    fun acumuladoDiario(
+        movimientos: List<MovimientoEntity>,
+        categorias: List<CategoriaEntity>,
+        fijos: Set<Long>,
+        mes: YearMonth,
+        hastaDia: Int = mes.lengthOfMonth()
+    ): List<Long> {
+        val cats = categorias.associateBy { it.id }
+        val porDia = LongArray(mes.lengthOfMonth())
+        movimientos.forEach {
+            if (it.tipo != TipoMovimiento.GASTO.name) return@forEach
+            val f = Formato.aLocalDate(it.fecha)
+            if (YearMonth.from(f) != mes || !Asesor.esDiaADia(cats[it.categoriaId], fijos)) return@forEach
+            porDia[f.dayOfMonth - 1] += it.monto
+        }
+        var suma = 0L
+        return (0 until hastaDia.coerceIn(0, porDia.size)).map { suma += porDia[it]; suma }
+    }
+
+    private fun clave(nota: String): String =
+        Interprete.normalizar(nota).replace(Regex("[^a-z ]"), " ").replace(Regex("\\s+"), " ").trim().take(28)
+
+    /** Gastos con la misma descripción y monto parecido en al menos 2 de los últimos 4 meses. */
+    fun cobrosRecurrentes(movimientos: List<MovimientoEntity>, hoy: LocalDate): List<CobroRecurrente> {
+        val desde = YearMonth.from(hoy).minusMonths(3).atDay(1)
+        return movimientos
+            .filter { it.tipo == TipoMovimiento.GASTO.name && it.nota.isNotBlank() && !Formato.aLocalDate(it.fecha).isBefore(desde) }
+            .groupBy { clave(it.nota) }
+            .filterKeys { it.length >= 4 }
+            .mapNotNull { (_, lista) ->
+                val porMes = lista.groupBy { YearMonth.from(Formato.aLocalDate(it.fecha)) }
+                if (porMes.size < 2) return@mapNotNull null
+                val montos = porMes.values.map { m -> m.sumOf { it.monto } }
+                val promedio = montos.sum() / montos.size
+                if (promedio <= 0L || montos.any { kotlin.math.abs(it - promedio) * 100 > promedio * 20 }) return@mapNotNull null
+                val ultimo = lista.maxBy { it.fecha }
+                CobroRecurrente(ultimo.nota.take(40), promedio, porMes.size, Formato.aLocalDate(ultimo.fecha))
+            }
+            .sortedByDescending { it.montoMensual }
+    }
+}

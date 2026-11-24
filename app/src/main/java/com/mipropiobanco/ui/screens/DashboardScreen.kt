@@ -196,6 +196,19 @@ fun DashboardScreen(
             }
         }
 
+        // ---- Curva del mes y cobros recurrentes ----
+        item {
+            val fijosCats = plantillas.filter { it.tipo == TipoMovimiento.GASTO.name }.map { it.categoriaId }.toSet()
+            val hoyF = LocalDate.now()
+            val esteMesCurva = com.mipropiobanco.domain.Analisis.acumuladoDiario(movimientos, categorias, fijosCats, YearMonth.now(), hoyF.dayOfMonth)
+            val pasadoCurva = com.mipropiobanco.domain.Analisis.acumuladoDiario(movimientos, categorias, fijosCats, YearMonth.now().minusMonths(1))
+            com.mipropiobanco.ui.components.CurvaGastoMes(esteMesCurva, pasadoCurva, YearMonth.now().lengthOfMonth())
+        }
+        item {
+            val cobros = com.mipropiobanco.domain.Analisis.cobrosRecurrentes(movimientos, LocalDate.now())
+            if (cobros.isNotEmpty()) com.mipropiobanco.ui.components.TarjetaRecurrentes(cobros)
+        }
+
         // ---- Accesos: plan y año ----
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -477,7 +490,7 @@ private fun TarjetaPrincipal(
     enCuentas: Long, miBanco: Long, debo: Long, patrimonio: Long, alAbrir: () -> Unit,
     ocultar: Boolean, alOjo: () -> Unit
 ) {
-    val degradado = Brush.linearGradient(listOf(Color(0xFF0B8F5E), Color(0xFF0A5C8A), Color(0xFF1E2A78)))
+    val degradado = com.mipropiobanco.ui.theme.FondoHero
     Card(onClick = alAbrir, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
         Column(
             Modifier.fillMaxWidth().background(degradado).padding(22.dp),

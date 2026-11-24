@@ -642,8 +642,8 @@ private fun FilaMovimiento(
     if (m.tipo == TipoMovimiento.TRASLADO.name) {
         Card(onClick = alTocar, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("🔄", style = MaterialTheme.typography.titleLarge)
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                com.mipropiobanco.ui.components.IconoCirculo("🔄")
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("Traslado", fontWeight = FontWeight.Medium)
                     Text(
                         "${medio?.nombre ?: "?"} → ${destino?.nombre ?: "?"}" + if (m.nota.isNotBlank()) " · ${m.nota}" else "",
@@ -660,8 +660,8 @@ private fun FilaMovimiento(
     val esIngreso = m.tipo == TipoMovimiento.INGRESO.name
     Card(onClick = alTocar, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(c?.icono ?: "📦", style = MaterialTheme.typography.titleLarge)
-            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            com.mipropiobanco.ui.components.IconoCirculo(c?.icono ?: "📦")
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(c?.nombre ?: "Sin categoría", fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     listOfNotNull(medio?.let { "${it.icono} ${it.nombre}" }, m.nota.ifBlank { null }, if (m.plantillaId != null) "🔁 fijo" else null, if (m.foto != null) "📎 recibo" else null)

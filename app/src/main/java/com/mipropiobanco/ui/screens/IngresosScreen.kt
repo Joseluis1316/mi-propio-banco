@@ -114,7 +114,7 @@ fun IngresosScreen(
 
             // ---- Tarjeta principal ----
             item {
-                val degradado = Brush.linearGradient(listOf(Color(0xFF00A86B), Color(0xFF00796B), Color(0xFF004D40)))
+                val degradado = com.mipropiobanco.ui.theme.FondoHero
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
                     Column(
                         Modifier.fillMaxWidth().background(degradado).padding(22.dp),

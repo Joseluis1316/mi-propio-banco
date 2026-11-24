@@ -72,16 +72,16 @@ fun AnilloPuntaje(puntaje: Int, color: Color, modifier: Modifier = Modifier) {
 }
 
 private fun colorPuntaje(p: Int): Color = when {
-    p >= 85 -> Color(0xFF6EE7B7)
-    p >= 65 -> Color(0xFFA7F3D0)
-    p >= 45 -> Color(0xFFFCD34D)
-    else -> Color(0xFFFCA5A5)
+    p >= 85 -> Color(0xFFB5E86A)
+    p >= 65 -> Color(0xFFD6EE9E)
+    p >= 45 -> Color(0xFFF2B84B)
+    else -> Color(0xFFFF7A7A)
 }
 
 /** La tarjeta estrella de Inicio: cuánto puedo gastar hoy. */
 @Composable
 fun TarjetaHoy(d: Diagnostico, alPulsar: () -> Unit) {
-    val fondo = Brush.linearGradient(listOf(Color(0xFF065F46), Color(0xFF0F766E), Color(0xFF312E81)))
+    val fondo = com.mipropiobanco.ui.theme.FondoHero
     Surface(onClick = alPulsar, shape = RoundedCornerShape(28.dp), color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
         Box(Modifier.background(fondo).padding(20.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -95,7 +95,7 @@ fun TarjetaHoy(d: Diagnostico, alPulsar: () -> Unit) {
                         MontoAnimado(
                             if (d.hoyPuedes >= 0L) d.hoyPuedes else -d.hoyPuedes,
                             MaterialTheme.typography.displaySmall,
-                            if (d.hoyPuedes >= 0L) Color.White else Color(0xFFFCA5A5)
+                            if (d.hoyPuedes >= 0L) Color(0xFFB5E86A) else Color(0xFFFF7A7A)
                         )
                         Text(
                             "Límite diario ${Formato.cop(d.porDia)} · ${d.diasRestantes} día(s) para cerrar la quincena",
@@ -111,7 +111,7 @@ fun TarjetaHoy(d: Diagnostico, alPulsar: () -> Unit) {
                 Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.18f))) {
                     Box(
                         Modifier.fillMaxWidth(usado).height(8.dp).clip(RoundedCornerShape(50))
-                            .background(if (usado >= 1f) Color(0xFFFCA5A5) else Color(0xFF6EE7B7))
+                            .background(if (usado >= 1f) Color(0xFFFF7A7A) else Color(0xFFB5E86A))
                     )
                 }
                 Row {
@@ -157,6 +157,101 @@ fun CarruselConsejos(consejos: List<Consejo>, alAccion: (AccionConsejo) -> Unit)
                     }
                 }
             }
+        }
+    }
+}
+
+/** Ícono de categoría dentro de un círculo (estilo apps de banca). */
+@Composable
+fun IconoCirculo(icono: String, tamano: androidx.compose.ui.unit.Dp = 42.dp) {
+    Box(
+        Modifier.size(tamano).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(icono, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/**
+ * Curva del gasto acumulado: este mes (línea de acento) contra el mes pasado (gris).
+ * Si la línea va por debajo de la gris, vas gastando menos que el mes pasado.
+ */
+@Composable
+fun CurvaGastoMes(esteMes: List<Long>, mesPasado: List<Long>, diasMes: Int) {
+    val acento = MaterialTheme.colorScheme.primary
+    val gris = MaterialTheme.colorScheme.outline
+    val alerta = MaterialTheme.colorScheme.error
+    val maximo = maxOf(esteMes.maxOrNull() ?: 0L, mesPasado.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    val anim = remember(esteMes) { Animatable(0f) }
+    LaunchedEffect(esteMes) { anim.animateTo(1f, tween(1000, easing = FastOutSlowInEasing)) }
+    val hoyVal = esteMes.lastOrNull() ?: 0L
+    val antesVal = mesPasado.getOrNull(esteMes.size - 1) ?: 0L
+    val diferencia = hoyVal - antesVal
+    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Gasto del mes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(Formato.cop(hoyVal), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            if (antesVal > 0L) {
+                Text(
+                    if (diferencia <= 0L) "${Formato.cop(-diferencia)} menos que el mes pasado a esta fecha"
+                    else "${Formato.cop(diferencia)} más que el mes pasado a esta fecha",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (diferencia <= 0L) acento else alerta
+                )
+            }
+            Canvas(Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp)) {
+                val paso = size.width / (diasMes - 1).coerceAtLeast(1)
+                fun y(v: Long) = size.height - size.height * (v.toFloat() / maximo)
+                fun trazo(datos: List<Long>, color: Color, ancho: Float, hasta: Float) {
+                    val n = (datos.size * hasta).toInt().coerceAtMost(datos.size)
+                    if (n < 2) return
+                    val camino = androidx.compose.ui.graphics.Path()
+                    camino.moveTo(0f, y(datos[0]))
+                    for (i in 1 until n) camino.lineTo(i * paso, y(datos[i]))
+                    drawPath(camino, color, style = Stroke(ancho, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                }
+                trazo(mesPasado, gris.copy(alpha = 0.6f), 2.dp.toPx(), 1f)
+                trazo(esteMes, acento, 3.dp.toPx(), anim.value)
+                if (esteMes.isNotEmpty() && anim.value >= 1f) {
+                    drawCircle(acento, 5.dp.toPx(), androidx.compose.ui.geometry.Offset((esteMes.size - 1) * paso, y(hoyVal)))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("━ Este mes", color = acento, style = MaterialTheme.typography.labelSmall)
+                Text("━ Mes pasado", color = gris, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+/** Suscripciones y cobros que se repiten cada mes. */
+@Composable
+fun TarjetaRecurrentes(cobros: List<com.mipropiobanco.domain.CobroRecurrente>) {
+    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Cobros que se repiten", style = MaterialTheme.typography.titleMedium)
+                    Text("Detectados solos en tus movimientos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(Formato.cop(cobros.sumOf { it.montoMensual }) + "/mes", fontWeight = FontWeight.SemiBold)
+            }
+            cobros.take(6).forEach { c ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconoCirculo("🔁", 36.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(c.nombre, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${c.meses} meses seguidos · último ${Formato.fecha(c.ultimo)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(Formato.cop(c.montoMensual), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Text(
+                "Al año son ${Formato.cop(cobros.sumOf { it.montoMensual } * 12)}. ¿Usas todos?",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

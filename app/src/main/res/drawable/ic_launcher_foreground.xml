@@ -1,23 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ícono: edificio de banco con columnas, centrado en la zona segura del ícono adaptable. -->
+<!-- Ícono: tres barras que crecen (ahorro que sube) sobre una base, en lima sobre grafito. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,46 L54,32 L78,46 Z" />
+        android:fillColor="#B5E86A"
+        android:pathData="M36,58 h8 a2,2 0 0,1 2,2 v12 h-12 v-12 a2,2 0 0,1 2,-2 z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M32,48 h44 v4 h-44 z" />
+        android:fillColor="#B5E86A"
+        android:pathData="M50,48 h8 a2,2 0 0,1 2,2 v22 h-12 v-22 a2,2 0 0,1 2,-2 z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M36,54 h6 v16 h-6 z M51,54 h6 v16 h-6 z M66,54 h6 v16 h-6 z" />
+        android:fillColor="#B5E86A"
+        android:pathData="M64,36 h8 a2,2 0 0,1 2,2 v34 h-12 v-34 a2,2 0 0,1 2,-2 z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,72 h48 v5 h-48 z" />
-    <path
-        android:fillColor="#F2BE6B"
-        android:pathData="M54,37.5 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+        android:fillColor="#F1F2F4"
+        android:pathData="M32,74 h44 v3 h-44 z" />
 </vector>

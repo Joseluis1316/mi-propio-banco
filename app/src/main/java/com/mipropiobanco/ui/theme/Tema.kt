@@ -14,66 +14,75 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.mipropiobanco.data.prefs.ModoTema
 
+/*
+ * Paleta "Grafito y Lima": neutros sobrios (como las apps de banca premium) y un solo color de acento.
+ * Verde = entra / bien · Coral = sale / alerta · Ámbar = cuidado.
+ */
 private val EsquemaClaro = lightColorScheme(
-    primary = Color(0xFF00875A),
+    primary = Color(0xFF3F6212),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFC6F6DD),
-    onPrimaryContainer = Color(0xFF002113),
-    secondary = Color(0xFF3D5AFE),
+    primaryContainer = Color(0xFFE4F5C8),
+    onPrimaryContainer = Color(0xFF17260A),
+    secondary = Color(0xFF3B4A6B),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFE0E5FF),
-    onSecondaryContainer = Color(0xFF00105C),
-    tertiary = Color(0xFFB26A00),
+    secondaryContainer = Color(0xFFE6EAF2),
+    onSecondaryContainer = Color(0xFF1A2233),
+    tertiary = Color(0xFF9A5B00),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFE3BF),
-    onTertiaryContainer = Color(0xFF2C1800),
-    error = Color(0xFFD32F2F),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
-    background = Color(0xFFF4F6FA),
-    onBackground = Color(0xFF151A22),
-    surface = Color(0xFFF4F6FA),
-    onSurface = Color(0xFF151A22),
-    surfaceVariant = Color(0xFFE3E8F0),
-    onSurfaceVariant = Color(0xFF4A5363),
+    tertiaryContainer = Color(0xFFFCEBCF),
+    onTertiaryContainer = Color(0xFF2E1B00),
+    error = Color(0xFFC8373D),
+    errorContainer = Color(0xFFFCE4E4),
+    onErrorContainer = Color(0xFF410006),
+    background = Color(0xFFF5F5F3),
+    onBackground = Color(0xFF141517),
+    surface = Color(0xFFF5F5F3),
+    onSurface = Color(0xFF141517),
+    surfaceVariant = Color(0xFFE7E7E3),
+    onSurfaceVariant = Color(0xFF5C5F66),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFFFFFFF),
     surfaceContainer = Color(0xFFFFFFFF),
-    surfaceContainerHigh = Color(0xFFF0F3F8),
-    surfaceContainerHighest = Color(0xFFE8ECF3),
-    outline = Color(0xFF7A8496),
-    outlineVariant = Color(0xFFD5DBE5)
+    surfaceContainerHigh = Color(0xFFEFEFEC),
+    surfaceContainerHighest = Color(0xFFE8E8E4),
+    outline = Color(0xFF8A8D93),
+    outlineVariant = Color(0xFFDDDDD8)
 )
 
 private val EsquemaOscuro = darkColorScheme(
-    primary = Color(0xFF4ADE9B),
-    onPrimary = Color(0xFF00391F),
-    primaryContainer = Color(0xFF0E4D33),
-    onPrimaryContainer = Color(0xFFC6F6DD),
-    secondary = Color(0xFF9AA8FF),
-    onSecondary = Color(0xFF0B1A6E),
-    secondaryContainer = Color(0xFF26337A),
-    onSecondaryContainer = Color(0xFFE0E5FF),
-    tertiary = Color(0xFFFFB95C),
-    onTertiary = Color(0xFF462A00),
-    tertiaryContainer = Color(0xFF5E3B00),
-    onTertiaryContainer = Color(0xFFFFE3BF),
-    error = Color(0xFFFF8A80),
-    errorContainer = Color(0xFF7A1A1A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF0B0F17),
-    onBackground = Color(0xFFE6EAF2),
-    surface = Color(0xFF0B0F17),
-    onSurface = Color(0xFFE6EAF2),
-    surfaceVariant = Color(0xFF1C2330),
-    onSurfaceVariant = Color(0xFFA9B3C4),
-    surfaceContainerLowest = Color(0xFF0E131C),
-    surfaceContainerLow = Color(0xFF131A25),
-    surfaceContainer = Color(0xFF161E2A),
-    surfaceContainerHigh = Color(0xFF1C2533),
-    surfaceContainerHighest = Color(0xFF232D3D),
-    outline = Color(0xFF6B768A),
-    outlineVariant = Color(0xFF2A3445)
+    primary = Color(0xFFB5E86A),
+    onPrimary = Color(0xFF1B2A06),
+    primaryContainer = Color(0xFF26331A),
+    onPrimaryContainer = Color(0xFFDDF5B8),
+    secondary = Color(0xFFAEB9D0),
+    onSecondary = Color(0xFF1B2232),
+    secondaryContainer = Color(0xFF242A35),
+    onSecondaryContainer = Color(0xFFDCE2EE),
+    tertiary = Color(0xFFF2B84B),
+    onTertiary = Color(0xFF3A2500),
+    tertiaryContainer = Color(0xFF3A2E17),
+    onTertiaryContainer = Color(0xFFFBE3B5),
+    error = Color(0xFFFF7A7A),
+    errorContainer = Color(0xFF3D1C1E),
+    onErrorContainer = Color(0xFFFFD9D9),
+    background = Color(0xFF0E0F11),
+    onBackground = Color(0xFFF1F2F4),
+    surface = Color(0xFF0E0F11),
+    onSurface = Color(0xFFF1F2F4),
+    surfaceVariant = Color(0xFF23262B),
+    onSurfaceVariant = Color(0xFF9EA3AB),
+    surfaceContainerLowest = Color(0xFF0B0C0E),
+    surfaceContainerLow = Color(0xFF141518),
+    surfaceContainer = Color(0xFF17191C),
+    surfaceContainerHigh = Color(0xFF1E2024),
+    surfaceContainerHighest = Color(0xFF262930),
+    outline = Color(0xFF6E737B),
+    outlineVariant = Color(0xFF2A2D33)
+)
+
+/** Fondo de las tarjetas grandes (antes eran degradados de colores): grafito sobrio. */
+val FondoHero = androidx.compose.ui.graphics.Brush.linearGradient(
+    listOf(Color(0xFF22252B), Color(0xFF17191D))
 )
 
 private val Formas = Shapes(
@@ -86,9 +95,10 @@ private val Formas = Shapes(
 
 private val base = Typography()
 private val Tipografia = base.copy(
-    displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+    displaySmall = base.displaySmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp),
+    headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp),
     headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold),
-    headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold),
+    headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
     titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
     titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
     labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold)
