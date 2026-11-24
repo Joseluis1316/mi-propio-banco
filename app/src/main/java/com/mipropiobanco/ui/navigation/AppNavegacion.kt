@@ -45,6 +45,7 @@ import com.mipropiobanco.ui.screens.DeudasScreen
 import com.mipropiobanco.ui.screens.LoginScreen
 import com.mipropiobanco.ui.screens.MetasScreen
 import com.mipropiobanco.ui.screens.PresupuestoScreen
+import com.mipropiobanco.ui.screens.ResumenAnioScreen
 import com.mipropiobanco.ui.screens.IngresosScreen
 import com.mipropiobanco.ui.screens.MovimientosScreen
 import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
@@ -55,6 +56,7 @@ private object Rutas {
     const val INGRESOS = "ingresos"
     const val CALENDARIO = "calendario"
     const val PRESUPUESTO = "presupuesto"
+    const val ANIO = "anio"
     const val BANCO = "banco"
     const val DEUDAS = "deudas"
     const val AJUSTES = "ajustes"
@@ -150,7 +152,8 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alAjustes = { nav.navigate(Rutas.AJUSTES) },
                     alBandeja = { nav.navigate(Rutas.BANDEJA) },
                     alMetas = { nav.navigate(Rutas.METAS) },
-                    alPresupuesto = { nav.irAPestana(Rutas.PRESUPUESTO) }
+                    alPresupuesto = { nav.irAPestana(Rutas.PRESUPUESTO) },
+                    alAnio = { nav.navigate(Rutas.ANIO) }
                 )
             }
             composable(Rutas.INGRESOS) {
@@ -185,6 +188,9 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alMetas = { nav.navigate(Rutas.METAS) },
                     alCalendario = { nav.navigate(Rutas.CALENDARIO) }
                 )
+            }
+            composable(Rutas.ANIO) {
+                ResumenAnioScreen(vm = vm, alVolver = { nav.popBackStack() })
             }
             composable(Rutas.CALENDARIO) {
                 CalendarioScreen(vm = vm)

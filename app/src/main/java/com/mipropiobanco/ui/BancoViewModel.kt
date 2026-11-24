@@ -1367,6 +1367,31 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         mensaje = { it }
     )
 
+    // ---------- Asesor: "hoy puedes gastar", puntaje y consejos ----------
+
+    val presupuestoActual: StateFlow<com.mipropiobanco.domain.ResumenPresupuestoMes?> =
+        presupuestoDe(java.time.YearMonth.now())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val diagnostico: StateFlow<com.mipropiobanco.domain.Diagnostico?> =
+        kotlinx.coroutines.flow.combine(presupuestoActual, movimientos, categorias, deudas, plantillas) { pm, movs, cats, ds, pls ->
+            if (pm == null) null else runCatching {
+                com.mipropiobanco.domain.Asesor.analizar(
+                    pm, java.time.LocalDate.now(), movs, cats, ds,
+                    pls.filter { it.tipo == TipoMovimiento.GASTO.name }.map { it.categoriaId }.toSet()
+                )
+            }.getOrNull()
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    init {
+        // El widget de la pantalla del celular se actualiza solo cuando cambian los números.
+        viewModelScope.launch {
+            diagnostico.collect { d ->
+                if (d != null) runCatching { com.mipropiobanco.avisos.WidgetHoy.guardar(app, d, preferencias.ocultarSaldos.value) }
+            }
+        }
+    }
+
     init {
         Formato.ocultar = preferencias.ocultarSaldos.value
         viewModelScope.launch { runCatching { finanzas.categoriaPrestamosRecibidos() } }

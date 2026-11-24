@@ -74,8 +74,10 @@ fun DashboardScreen(
     alAjustes: () -> Unit,
     alBandeja: () -> Unit = {},
     alMetas: () -> Unit = {},
-    alPresupuesto: () -> Unit = {}
+    alPresupuesto: () -> Unit = {},
+    alAnio: () -> Unit = {}
 ) {
+    val diagnostico by vm.diagnostico.collectAsStateWithLifecycle()
     val flujoPlan = androidx.compose.runtime.remember { vm.presupuestoDe(YearMonth.now()) }
     val planMes by flujoPlan.collectAsStateWithLifecycle(initialValue = null)
     val resumen by vm.resumen.collectAsStateWithLifecycle()
@@ -121,6 +123,24 @@ fun DashboardScreen(
                 }
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     IconButton(onClick = alAjustes) { Icon(Icons.Filled.Settings, contentDescription = "Ajustes") }
+                }
+            }
+        }
+
+        // ---- Asesor: cuánto puedo gastar hoy y qué hacer ----
+        diagnostico?.let { d ->
+            item { com.mipropiobanco.ui.components.TarjetaHoy(d, alPresupuesto) }
+            if (d.consejos.isNotEmpty()) {
+                item {
+                    com.mipropiobanco.ui.components.CarruselConsejos(d.consejos) { accion ->
+                        when (accion) {
+                            com.mipropiobanco.domain.AccionConsejo.PLAN, com.mipropiobanco.domain.AccionConsejo.SALARIO -> alPresupuesto()
+                            com.mipropiobanco.domain.AccionConsejo.DEUDAS -> alVerDeudas()
+                            com.mipropiobanco.domain.AccionConsejo.METAS -> alMetas()
+                            com.mipropiobanco.domain.AccionConsejo.GASTOS -> alVerMovimientos()
+                            com.mipropiobanco.domain.AccionConsejo.BANCO -> alNuevoAporte()
+                        }
+                    }
                 }
             }
         }
@@ -173,6 +193,15 @@ fun DashboardScreen(
                         )
                     }
                 }
+            }
+        }
+
+        // ---- Accesos: plan y año ----
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.material3.FilledTonalButton(onClick = alPresupuesto, modifier = Modifier.weight(1f)) { Text("📆 Mi plan") }
+                androidx.compose.material3.FilledTonalButton(onClick = alAnio, modifier = Modifier.weight(1f)) { Text("📊 Mi año") }
+                androidx.compose.material3.FilledTonalButton(onClick = alMetas, modifier = Modifier.weight(1f)) { Text("🎯 Metas") }
             }
         }
 
