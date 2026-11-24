@@ -221,7 +221,9 @@ class FinanzasRepository(private val db: BancoDatabase) {
         repetir: DatosRepeticion?,
         plantillaIdExistente: Long? = null,
         foto: String? = null,
-        medioDestinoId: Long? = null
+        medioDestinoId: Long? = null,
+        /** null = deja la que tenía (o ninguna si es nuevo). */
+        quincena: String? = null
     ) = db.withTransaction {
         require(monto > 0L) { "El monto debe ser mayor que cero" }
         require(medioId > 0L) { "Elige el medio de pago" }
@@ -259,7 +261,9 @@ class FinanzasRepository(private val db: BancoDatabase) {
             nota = nota.trim(),
             plantillaId = plantillaId,
             foto = foto,
-            medioDestinoId = if (tipo == TipoMovimiento.TRASLADO) medioDestinoId else null
+            medioDestinoId = if (tipo == TipoMovimiento.TRASLADO) medioDestinoId else null,
+            quincena = if (tipo != TipoMovimiento.INGRESO) "" else quincena
+                ?: (id?.let { movimientoDao.obtenerTodos().firstOrNull { e -> e.id == it }?.quincena } ?: "")
         )
         if (id == null) movimientoDao.insertar(m) else movimientoDao.actualizar(m)
     }

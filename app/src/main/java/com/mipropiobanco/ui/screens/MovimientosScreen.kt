@@ -465,6 +465,8 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
                     .split(" ").filter { it.length >= 4 }.any { texto.contains(it) }
             }?.deuda?.id
         }
+        var extraQuincena: String? = null
+        var extraPrestamo: com.mipropiobanco.domain.DatosPrestamoRecibido? = null
         DialogoMovimiento(
             existente = editando,
             propuesta = p,
@@ -473,8 +475,9 @@ fun MovimientosScreen(vm: BancoViewModel, nuevoInicial: String, alConfigurar: ()
             tipoInicial = TipoMovimiento.desde(editando?.tipo ?: p?.tipo?.name ?: nuevoTipo),
             categorias = categorias,
             medios = medios,
+            alExtras = { q, pr -> extraQuincena = q; extraPrestamo = pr },
             alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto, deudaId, destino ->
-                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto, destino)
+                vm.guardarMovimiento(editando?.id, tipo, monto, cat, medio, fecha, nota, repetir, editando?.plantillaId, foto, destino, extraQuincena, extraPrestamo)
                 // Además baja el saldo de la deuda elegida (sin volver a anotar el gasto).
                 if (deudaId != null && editando == null) vm.abonarDeuda(deudaId, monto, fecha, comoGasto = false)
             },
@@ -713,7 +716,9 @@ internal fun DialogoMovimiento(
     alGuardar: (TipoMovimiento, Long, Long, Long, Long, String, DatosRepeticion?, String?, Long?, Long?) -> Unit,
     alEliminar: (() -> Unit)?,
     alCancelar: () -> Unit,
-    alCerrar: () -> Unit
+    alCerrar: () -> Unit,
+    /** Se llama justo antes de alGuardar con la quincena elegida y, si es un préstamo, los datos de la deuda. */
+    alExtras: (String?, com.mipropiobanco.domain.DatosPrestamoRecibido?) -> Unit = { _, _ -> }
 ) {
     var tipo by rememberSaveable { mutableStateOf(tipoInicial) }
     var monto by rememberSaveable { mutableStateOf(existente?.monto?.toString() ?: propuesta?.monto?.toString().orEmpty()) }
@@ -743,14 +748,21 @@ internal fun DialogoMovimiento(
         (deudaId != null || categorias.firstOrNull { it.id == categoriaId }
             ?.let { com.mipropiobanco.domain.Interprete.normalizar(it.nombre).contains("deuda") } == true)
     var repetir by rememberSaveable { mutableStateOf(false) }
+    var quincenaElegida by rememberSaveable { mutableStateOf(existente?.quincena ?: "") }
+    var esPrestamo by rememberSaveable { mutableStateOf(false) }
+    var prestamista by rememberSaveable { mutableStateOf("") }
+    var cuotaPrestamo by rememberSaveable { mutableStateOf("") }
+    var primerPago by rememberSaveable { mutableStateOf(Formato.aMillis(java.time.LocalDate.now().plusMonths(1))) }
     var periodicidad by rememberSaveable { mutableStateOf(Periodicidad.MENSUAL) }
     var automatica by rememberSaveable { mutableStateOf(true) }
     var confirmarBorrar by remember { mutableStateOf(false) }
 
     val montoV = monto.toLongOrNull() ?: 0L
     val esTraslado = tipo == TipoMovimiento.TRASLADO
-    val categoriaValida = esTraslado || categorias.any { it.id == categoriaId && it.tipo == tipo.name }
+    val prestamoActivo = esPrestamo && tipo == TipoMovimiento.INGRESO && existente == null
+    val categoriaValida = esTraslado || prestamoActivo || categorias.any { it.id == categoriaId && it.tipo == tipo.name }
     val valido = montoV > 0L && categoriaValida && medioId > 0L &&
+        (!prestamoActivo || prestamista.isNotBlank()) &&
         (!esTraslado || (medioDestinoId > 0L && medioDestinoId != medioId))
 
     val cancelar: () -> Unit = {
@@ -816,8 +828,26 @@ internal fun DialogoMovimiento(
                     Text("Llega a", style = MaterialTheme.typography.labelLarge)
                     SelectorMedio(medios, medioDestinoId) { medioDestinoId = it }
                 } else {
-                    Text("Categoría", style = MaterialTheme.typography.labelLarge)
-                    SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                    if (tipo == TipoMovimiento.INGRESO && existente == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Me lo prestaron")
+                                Text("Se crea la deuda sola, no tienes que ir a Deudas", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(checked = esPrestamo, onCheckedChange = { esPrestamo = it })
+                        }
+                    }
+                    if (prestamoActivo) {
+                        OutlinedTextField(
+                            value = prestamista, onValueChange = { prestamista = it.take(40) },
+                            label = { Text("¿Quién te prestó?") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                        )
+                        CampoMonto(valor = cuotaPrestamo, alCambiar = { cuotaPrestamo = it }, etiqueta = "¿Cuánto le pagas cada vez? (vacío = todo)")
+                        SelectorFecha("Primer pago", primerPago, { primerPago = it })
+                    } else {
+                        Text("Categoría", style = MaterialTheme.typography.labelLarge)
+                        SelectorCategoria(categorias, tipo, categoriaId) { categoriaId = it }
+                    }
                 }
                 if (esPagoDeDeuda) {
                     Text("¿A cuál deuda le abonas? (baja su saldo)", style = MaterialTheme.typography.labelLarge)
@@ -837,6 +867,27 @@ internal fun DialogoMovimiento(
                     SelectorMedio(medios, medioId) { medioId = it }
                 }
                 SelectorFecha("Fecha", fecha, { fecha = it })
+                if (tipo == TipoMovimiento.INGRESO) {
+                    val f = Formato.aLocalDate(fecha)
+                    val m = java.time.YearMonth.from(f)
+                    val opciones = listOf(
+                        m to com.mipropiobanco.domain.Quincena.Q1,
+                        m to com.mipropiobanco.domain.Quincena.Q2,
+                        m.plusMonths(1) to com.mipropiobanco.domain.Quincena.Q1
+                    )
+                    val (sm, sq) = com.mipropiobanco.domain.PresupuestoQuincenal.quincenaSugerida(f)
+                    val sugerida = com.mipropiobanco.domain.PresupuestoQuincenal.claveQuincena(sm, sq)
+                    val actual = quincenaElegida.ifBlank { sugerida }
+                    Text("¿Para qué quincena es esta plata?", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        opciones.forEach { (om, oq) ->
+                            val clave = com.mipropiobanco.domain.PresupuestoQuincenal.claveQuincena(om, oq)
+                            val mesCorto = om.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale("es", "CO")).trimEnd('.')
+                            val etiqueta = if (oq == com.mipropiobanco.domain.Quincena.Q1) "1–15 $mesCorto" else "16–${om.lengthOfMonth()} $mesCorto"
+                            FilterChip(selected = actual == clave, onClick = { quincenaElegida = clave }, label = { Text(etiqueta) })
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = nota,
                     onValueChange = { nota = it.take(80) },
@@ -872,6 +923,14 @@ internal fun DialogoMovimiento(
         },
         confirmButton = {
             TextButton(enabled = valido, onClick = {
+                val f = Formato.aLocalDate(fecha)
+                val (sm, sq) = com.mipropiobanco.domain.PresupuestoQuincenal.quincenaSugerida(f)
+                alExtras(
+                    if (tipo == TipoMovimiento.INGRESO) quincenaElegida.ifBlank { com.mipropiobanco.domain.PresupuestoQuincenal.claveQuincena(sm, sq) } else "",
+                    if (prestamoActivo) com.mipropiobanco.domain.DatosPrestamoRecibido(
+                        prestamista.trim(), cuotaPrestamo.toLongOrNull()?.takeIf { it > 0L } ?: montoV, primerPago
+                    ) else null
+                )
                 alGuardar(
                     tipo, montoV, if (esTraslado) 0L else categoriaId, medioId, fecha, nota,
                     if (repetir && !esTraslado) DatosRepeticion(periodicidad, automatica) else null, foto,

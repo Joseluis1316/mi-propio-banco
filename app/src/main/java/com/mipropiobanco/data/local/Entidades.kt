@@ -143,7 +143,9 @@ data class MovimientoEntity(
     /** Ruta local de la foto del recibo (se guarda solo en este celular). */
     val foto: String? = null,
     /** Solo en traslados: a qué cuenta/medio llegó el dinero (medioId es de dónde salió). */
-    val medioDestinoId: Long? = null
+    val medioDestinoId: Long? = null,
+    /** Solo en ingresos: para qué quincena es la plata ("2026-12-1" o "2026-12-2"). Vacío = la de su fecha. */
+    val quincena: String = ""
 )
 
 /**

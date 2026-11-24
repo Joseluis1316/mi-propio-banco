@@ -17,6 +17,13 @@ class PresupuestoQuincenalTest {
     }
 
     @Test
+    fun quincenaSugeridaDelPago() {
+        assertEquals(YearMonth.of(2026, 12) to Quincena.Q1, PresupuestoQuincenal.quincenaSugerida(LocalDate.of(2026, 11, 30)))
+        assertEquals(YearMonth.of(2026, 11) to Quincena.Q2, PresupuestoQuincenal.quincenaSugerida(LocalDate.of(2026, 11, 15)))
+        assertEquals("2026-12-1", PresupuestoQuincenal.claveQuincena(YearMonth.of(2026, 12), Quincena.Q1))
+    }
+
+    @Test
     fun dia31EnNoviembreCaeEl30() {
         assertEquals(30, PresupuestoQuincenal.diaEnMes(YearMonth.of(2026, 11), 31).dayOfMonth)
     }

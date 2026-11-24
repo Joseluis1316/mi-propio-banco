@@ -239,6 +239,8 @@ fun IngresosScreen(
 
     if (nuevo != null || editando != null) {
         val e = editando
+        var extraQuincena: String? = null
+        var extraPrestamo: com.mipropiobanco.domain.DatosPrestamoRecibido? = null
         DialogoMovimiento(
             existente = e,
             propuesta = if (e == null) nuevo else null,
@@ -247,8 +249,9 @@ fun IngresosScreen(
             tipoInicial = TipoMovimiento.INGRESO,
             categorias = categorias,
             medios = medios,
+            alExtras = { q, pr -> extraQuincena = q; extraPrestamo = pr },
             alGuardar = { tipo, monto, cat, medio, fecha, nota, repetir, foto, _, destino ->
-                vm.guardarMovimiento(e?.id, tipo, monto, cat, medio, fecha, nota, repetir, e?.plantillaId, foto, destino)
+                vm.guardarMovimiento(e?.id, tipo, monto, cat, medio, fecha, nota, repetir, e?.plantillaId, foto, destino, extraQuincena, extraPrestamo)
             },
             alEliminar = e?.let { m -> { vm.eliminarMovimiento(m) } },
             alCancelar = { },

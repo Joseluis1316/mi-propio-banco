@@ -22,7 +22,7 @@ import kotlin.math.pow
         PlantillaEntity::class,
         ReglaCuentaEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class BancoDatabase : RoomDatabase() {
@@ -41,7 +41,7 @@ abstract class BancoDatabase : RoomDatabase() {
     companion object {
         fun crear(context: Context): BancoDatabase =
             Room.databaseBuilder(context, BancoDatabase::class.java, "mi_propio_banco.db")
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6, MIGRACION_6_7)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6, MIGRACION_6_7, MIGRACION_7_8)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         sembrarTipos(db)
@@ -122,6 +122,13 @@ abstract class BancoDatabase : RoomDatabase() {
         }
 
         /** Versión 6 → 7: Mi banco también le presta a otras personas (no se borra nada). */
+        /** Versión 7 → 8: a qué quincena va cada ingreso (no se borra nada). */
+        val MIGRACION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE movimientos ADD COLUMN quincena TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRACION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE prestamos ADD COLUMN prestatario TEXT NOT NULL DEFAULT ''")

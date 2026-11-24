@@ -8,6 +8,9 @@ import com.mipropiobanco.util.Formato
 import java.time.LocalDate
 import java.time.YearMonth
 
+/** Ingreso que es un préstamo: con esto se crea la deuda sola. */
+data class DatosPrestamoRecibido(val acreedor: String, val cuota: Long, val proximoPago: Long)
+
 /** Q1 = día 1 al 15; Q2 = día 16 al último día del mes. */
 enum class Quincena(val etiqueta: String) { Q1("Quincena 1"), Q2("Quincena 2") }
 
@@ -120,6 +123,16 @@ data class ResumenPresupuestoMes(
 }
 
 object PresupuestoQuincenal {
+
+    /** Clave guardada en el ingreso: "2026-12-1" o "2026-12-2". */
+    fun claveQuincena(mes: YearMonth, q: Quincena): String = "$mes-${if (q == Quincena.Q1) 1 else 2}"
+
+    /** Sugerencia: lo que te pagan del 26 en adelante suele ser para la quincena 1 del mes siguiente; del 11 al 25, para la 2. */
+    fun quincenaSugerida(fecha: LocalDate): Pair<YearMonth, Quincena> = when {
+        fecha.dayOfMonth >= 26 -> YearMonth.from(fecha).plusMonths(1) to Quincena.Q1
+        fecha.dayOfMonth >= 11 -> YearMonth.from(fecha) to Quincena.Q2
+        else -> YearMonth.from(fecha) to Quincena.Q1
+    }
 
     fun quincenaDe(fecha: LocalDate): Quincena = if (fecha.dayOfMonth <= 15) Quincena.Q1 else Quincena.Q2
 
@@ -265,7 +278,10 @@ object PresupuestoQuincenal {
 
         // ---- Por quincena ----
         val inicioMs = Formato.aMillis(inicioMes)
-        val saldoInicioMes = calcularSaldos(medios, movimientos.filter { it.fecha < inicioMs }).values.sum()
+        val clavesMes = setOf(claveQuincena(mes, Quincena.Q1), claveQuincena(mes, Quincena.Q2))
+        // Ingresos que llegaron antes del mes pero son para este mes: se cuentan en su quincena, no en "lo que venía".
+        val adelantados = movimientos.filter { it.fecha < inicioMs && it.tipo == TipoMovimiento.INGRESO.name && it.quincena in clavesMes }.sumOf { it.monto }
+        val saldoInicioMes = calcularSaldos(medios, movimientos.filter { it.fecha < inicioMs }).values.sum() - adelantados
         val variablesCats = categorias.filter { it.tipo == TipoMovimiento.GASTO.name && it.presupuestoMensual > 0L }
         val fijosCats = plantillas.filter { it.tipo == TipoMovimiento.GASTO.name }.map { it.categoriaId }.toSet()
 
@@ -274,7 +290,15 @@ object PresupuestoQuincenal {
             val delRango = movimientos.filter {
                 val f = Formato.aLocalDate(it.fecha); !f.isBefore(desde) && !f.isAfter(hasta)
             }
-            val ingresos = delRango.filter { it.tipo == TipoMovimiento.INGRESO.name }.sumOf { it.monto }
+            val claveQ = claveQuincena(mes, q)
+            // Un ingreso cuenta en la quincena que tú le asignaste; si no le asignaste, en la de su fecha.
+            val ingresosQ = movimientos.filter {
+                it.tipo == TipoMovimiento.INGRESO.name && (
+                    if (it.quincena.isNotBlank()) it.quincena == claveQ
+                    else Formato.aLocalDate(it.fecha).let { f -> !f.isBefore(desde) && !f.isAfter(hasta) }
+                    )
+            }
+            val ingresos = ingresosQ.sumOf { it.monto }
             val gastos = delRango.filter { it.tipo == TipoMovimiento.GASTO.name }
             val ahorro = gastos.filter { Cuadre.esAhorro(cats[it.categoriaId]) }.sumOf { it.monto }
             val esperados = ingresosEsperados.filter { quincenaDe(it.fecha) == q }.sortedBy { it.fecha }
@@ -286,7 +310,7 @@ object PresupuestoQuincenal {
                 val (p1, p2) = partir(if (c.id in fijosCats) 0L else c.presupuestoMensual)
                 RenglonVariable(c, if (q == Quincena.Q1) p1 else p2, realPorCat[c.id] ?: 0L)
             }.sortedByDescending { maxOf(it.planeado, it.real) }
-            val ingresosReales = delRango.filter { it.tipo == TipoMovimiento.INGRESO.name }
+            val ingresosReales = ingresosQ
                 .groupBy { it.categoriaId }.mapValues { e -> e.value.sumOf { it.monto } }
             val ingresosPlan = esperados.groupBy { it.ocurrencia.plantilla.categoriaId }
                 .mapValues { e -> e.value.sumOf { it.monto } }

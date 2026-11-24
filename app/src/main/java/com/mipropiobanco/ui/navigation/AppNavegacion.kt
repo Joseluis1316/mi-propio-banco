@@ -39,6 +39,10 @@ import com.mipropiobanco.ui.screens.BandejaScreen
 import com.mipropiobanco.ui.screens.CalendarioScreen
 import com.mipropiobanco.ui.screens.ConfiguracionFinanzasScreen
 import com.mipropiobanco.ui.screens.DashboardScreen
+import com.mipropiobanco.ui.screens.InicioScreen
+import com.mipropiobanco.ui.screens.AhorroScreen
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.setValue
 import com.mipropiobanco.ui.screens.DetalleDeudaScreen
 import com.mipropiobanco.ui.screens.DetallePrestamoScreen
 import com.mipropiobanco.ui.screens.DeudasScreen
@@ -57,6 +61,7 @@ private object Rutas {
     const val CALENDARIO = "calendario"
     const val PRESUPUESTO = "presupuesto"
     const val ANIO = "anio"
+    const val AHORRO = "ahorro"
     const val BANCO = "banco"
     const val DEUDAS = "deudas"
     const val AJUSTES = "ajustes"
@@ -73,11 +78,10 @@ private data class Destino(val ruta: String, val etiqueta: String, val icono: Im
 
 private val destinosPrincipales = listOf(
     Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
-    Destino(Rutas.INGRESOS, "Ingresos", Icons.AutoMirrored.Filled.TrendingUp),
-    Destino(Rutas.MOVIMIENTOS, "Gastos", Icons.Filled.AccountBalanceWallet),
+    Destino(Rutas.MOVIMIENTOS, "Movimientos", Icons.Filled.AccountBalanceWallet),
     Destino(Rutas.PRESUPUESTO, "Plan", Icons.Filled.CalendarMonth),
-    Destino(Rutas.BANCO, "Banco", Icons.Filled.Savings),
-    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard)
+    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard),
+    Destino(Rutas.AHORRO, "Ahorro", Icons.Filled.Savings)
 )
 
 private fun NavHostController.irAPestana(ruta: String) {
@@ -117,6 +121,25 @@ fun AppNavegacion(vm: BancoViewModel) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = {
+            // Botón + para registrar desde Inicio, Plan y Ahorro (Movimientos y Deudas tienen el suyo).
+            if (!pedirLogin && pestanaActual != null && pestanaActual.ruta in setOf(Rutas.INICIO, Rutas.PRESUPUESTO, Rutas.AHORRO)) {
+                var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                androidx.compose.foundation.layout.Box {
+                    androidx.compose.material3.FloatingActionButton(onClick = { menu = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Registrar")
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        listOf("GASTO" to "Gasto", "INGRESO" to "Ingreso (o préstamo que me hicieron)", "VOZ" to "Dictar por voz", "FOTO" to "Foto de un recibo").forEach { (clave, texto) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(texto) },
+                                onClick = { menu = false; nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=$clave") }
+                            )
+                        }
+                    }
+                }
+            }
+        },
         bottomBar = {
             if (pestanaActual != null && !pedirLogin) {
                 NavigationBar {
@@ -140,6 +163,17 @@ fun AppNavegacion(vm: BancoViewModel) {
             modifier = Modifier.padding(relleno)
         ) {
             composable(Rutas.INICIO) {
+                InicioScreen(
+                    vm = vm,
+                    alAjustes = { nav.navigate(Rutas.AJUSTES) },
+                    alPlan = { nav.irAPestana(Rutas.PRESUPUESTO) },
+                    alDeudas = { nav.irAPestana(Rutas.DEUDAS) },
+                    alMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
+                    alPorRevisar = { nav.navigate(Rutas.BANDEJA) },
+                    alAhorro = { nav.irAPestana(Rutas.AHORRO) }
+                )
+            }
+            composable("panel_anterior") {
                 DashboardScreen(
                     vm = vm,
                     alNuevoMovimiento = { tipo -> nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=$tipo") },
@@ -187,6 +221,17 @@ fun AppNavegacion(vm: BancoViewModel) {
                     alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
                     alMetas = { nav.navigate(Rutas.METAS) },
                     alCalendario = { nav.navigate(Rutas.CALENDARIO) }
+                )
+            }
+            composable(Rutas.AHORRO) {
+                AhorroScreen(
+                    vm = vm,
+                    alGuardar = { nav.navigate("${Rutas.BANCO}?pestana=0&nuevo=true") },
+                    alPrestarme = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alPrestarAOtro = { nav.navigate(Rutas.NUEVO_PRESTAMO_OTRO) },
+                    alVerBanco = { nav.navigate("${Rutas.BANCO}?pestana=0&nuevo=false") },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alMetas = { nav.navigate(Rutas.METAS) }
                 )
             }
             composable(Rutas.ANIO) {

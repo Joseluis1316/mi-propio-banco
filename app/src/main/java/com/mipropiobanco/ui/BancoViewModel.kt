@@ -87,11 +87,25 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
         repetir: DatosRepeticion?,
         plantillaIdExistente: Long? = null,
         foto: String? = null,
-        medioDestinoId: Long? = null
+        medioDestinoId: Long? = null,
+        quincena: String? = null,
+        prestamo: com.mipropiobanco.domain.DatosPrestamoRecibido? = null
     ) = ejecutar(
         accion = {
-            finanzas.guardarMovimiento(id, tipo, monto, categoriaId, medioId, fecha, nota, repetir, plantillaIdExistente, foto, medioDestinoId)
-            val acreedor = if (id == null) crearDeudaSiEsPrestamo(tipo, monto, categoriaId, fecha, nota) else null
+            val esPrestamo = prestamo != null && tipo == TipoMovimiento.INGRESO && id == null
+            val cat = if (esPrestamo) finanzas.categoriaPrestamosRecibidos() else categoriaId
+            val notaFinal = if (esPrestamo && nota.isBlank()) "Préstamo de ${prestamo!!.acreedor}" else nota
+            finanzas.guardarMovimiento(id, tipo, monto, cat, medioId, fecha, notaFinal, repetir, plantillaIdExistente, foto, medioDestinoId, quincena)
+            val acreedor = when {
+                esPrestamo -> {
+                    val p = prestamo!!
+                    val dia = if (p.proximoPago > 0L) Formato.aLocalDate(p.proximoPago).dayOfMonth else Formato.aLocalDate(fecha).dayOfMonth
+                    repo.guardarDeuda(null, p.acreedor.trim(), monto, p.cuota.coerceIn(1L, monto), 0.0, dia.coerceIn(1, 31), p.proximoPago)
+                    p.acreedor.trim()
+                }
+                id == null -> crearDeudaSiEsPrestamo(tipo, monto, cat, fecha, notaFinal)
+                else -> null
+            }
             if (tipo != TipoMovimiento.INGRESO) avisarSiNoAlcanza(medioId)
             acreedor
         },

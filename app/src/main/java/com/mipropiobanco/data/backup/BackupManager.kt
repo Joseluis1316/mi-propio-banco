@@ -135,6 +135,7 @@ class BackupManager(
                         .put("nota", m.nota).put("plantillaId", m.plantillaId ?: JSONObject.NULL)
                         .put("foto", m.foto ?: JSONObject.NULL)
                         .put("medioDestinoId", m.medioDestinoId ?: JSONObject.NULL)
+                        .put("quincena", m.quincena)
                 )
             }
         })
@@ -317,7 +318,8 @@ class BackupManager(
                 nota = it.optString("nota", ""),
                 plantillaId = if (it.isNull("plantillaId")) null else it.getLong("plantillaId"),
                 foto = if (it.isNull("foto")) null else it.optString("foto").ifEmpty { null },
-                medioDestinoId = if (!it.has("medioDestinoId") || it.isNull("medioDestinoId")) null else it.getLong("medioDestinoId")
+                medioDestinoId = if (!it.has("medioDestinoId") || it.isNull("medioDestinoId")) null else it.getLong("medioDestinoId"),
+                quincena = it.optString("quincena", "")
             )
         }.orEmpty()
         val plantillas = raiz.optJSONArray("plantillas")?.objetos()?.map {
