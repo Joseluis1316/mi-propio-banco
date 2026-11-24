@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Funciona sin internet; el permiso solo se usa para iniciar sesión y respaldar en la nube. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Recordatorios de pagos y presupuesto (Android 13+ lo pide al usuario). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Para pedir que no se apague la lectura de notificaciones y los recordatorios. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Para abrir el dictado por voz de Google en Android 11 o superior. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".MiPropioBancoApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MiPropioBanco">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Lee las notificaciones de Nequi y Daviplata (el usuario lo activa en Ajustes del celular). -->
+        <service
+            android:name=".avisos.LectorNotificaciones"
+            android:exported="true"
+            android:label="Mi Propio Banco"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Comparte con la cámara el archivo donde se guarda la foto del recibo. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rutas_archivos" />
+        </provider>
+        <receiver
+            android:name=".avisos.WidgetHoy"
+            android:exported="false"
+            android:label="Hoy puedes gastar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_hoy_info" />
+        </receiver>
+    </application>
+</manifest>

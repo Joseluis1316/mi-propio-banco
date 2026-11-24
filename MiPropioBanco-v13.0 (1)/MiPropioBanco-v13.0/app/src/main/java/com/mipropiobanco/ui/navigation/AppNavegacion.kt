@@ -1,0 +1,330 @@
+package com.mipropiobanco.ui.navigation
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.mipropiobanco.ui.BancoViewModel
+import com.mipropiobanco.ui.screens.AjustesScreen
+import com.mipropiobanco.ui.screens.BancoScreen
+import com.mipropiobanco.ui.screens.BandejaScreen
+import com.mipropiobanco.ui.screens.CalendarioScreen
+import com.mipropiobanco.ui.screens.ConfiguracionFinanzasScreen
+import com.mipropiobanco.ui.screens.DashboardScreen
+import com.mipropiobanco.ui.screens.InicioScreen
+import com.mipropiobanco.ui.screens.AhorroScreen
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.setValue
+import com.mipropiobanco.ui.screens.DetalleDeudaScreen
+import com.mipropiobanco.ui.screens.DetallePrestamoScreen
+import com.mipropiobanco.ui.screens.DeudasScreen
+import com.mipropiobanco.ui.screens.LoginScreen
+import com.mipropiobanco.ui.screens.MetasScreen
+import com.mipropiobanco.ui.screens.PresupuestoScreen
+import com.mipropiobanco.ui.screens.ResumenAnioScreen
+import com.mipropiobanco.ui.screens.IngresosScreen
+import com.mipropiobanco.ui.screens.MovimientosScreen
+import com.mipropiobanco.ui.screens.NuevoPrestamoScreen
+
+private object Rutas {
+    const val INICIO = "inicio"
+    const val MOVIMIENTOS = "movimientos"
+    const val INGRESOS = "ingresos"
+    const val CALENDARIO = "calendario"
+    const val PRESUPUESTO = "presupuesto"
+    const val ANIO = "anio"
+    const val AHORRO = "ahorro"
+    const val BANCO = "banco"
+    const val DEUDAS = "deudas"
+    const val AJUSTES = "ajustes"
+    const val CONFIG_FINANZAS = "config_finanzas"
+    const val BANDEJA = "bandeja"
+    const val METAS = "metas"
+    const val NUEVO_PRESTAMO = "nuevo_prestamo"
+    const val NUEVO_PRESTAMO_OTRO = "nuevo_prestamo_otro"
+    const val DETALLE_PRESTAMO = "prestamo"
+    const val DETALLE_DEUDA = "deuda"
+}
+
+private data class Destino(val ruta: String, val etiqueta: String, val icono: ImageVector)
+
+private val destinosPrincipales = listOf(
+    Destino(Rutas.INICIO, "Inicio", Icons.Filled.Home),
+    Destino(Rutas.MOVIMIENTOS, "Movimientos", Icons.Filled.AccountBalanceWallet),
+    Destino(Rutas.PRESUPUESTO, "Plan", Icons.Filled.CalendarMonth),
+    Destino(Rutas.DEUDAS, "Deudas", Icons.Filled.CreditCard),
+    Destino(Rutas.AHORRO, "Ahorro", Icons.Filled.Savings)
+)
+
+private fun NavHostController.irAPestana(ruta: String) {
+    navigate(ruta) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+/** Abre una pestaña con argumentos nuevos (sin restaurar el estado anterior). */
+private fun NavHostController.irAPestanaCon(ruta: String) {
+    navigate(ruta) {
+        popUpTo(graph.findStartDestination().id)
+        launchSingleTop = true
+    }
+}
+
+@Composable
+fun AppNavegacion(vm: BancoViewModel) {
+    val nav = rememberNavController()
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        vm.mensajes.collect { snackbar.showSnackbar(it) }
+    }
+
+    val correo by vm.correo.collectAsStateWithLifecycle()
+    val modoLocal by vm.modoLocal.collectAsStateWithLifecycle()
+    val pedirLogin = correo == null && !modoLocal
+
+    val entrada by nav.currentBackStackEntryAsState()
+    val rutaActual = entrada?.destination?.route.orEmpty()
+    val pestanaActual = destinosPrincipales.firstOrNull { d ->
+        rutaActual == d.ruta || rutaActual.startsWith(d.ruta + "?")
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = {
+            // Botón + para registrar desde Inicio, Plan y Ahorro (Movimientos y Deudas tienen el suyo).
+            if (!pedirLogin && pestanaActual != null && pestanaActual.ruta in setOf(Rutas.INICIO, Rutas.PRESUPUESTO, Rutas.AHORRO)) {
+                var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                androidx.compose.foundation.layout.Box {
+                    androidx.compose.material3.FloatingActionButton(onClick = { menu = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Registrar")
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        listOf("GASTO" to "Gasto", "INGRESO" to "Ingreso (o préstamo que me hicieron)", "VOZ" to "Dictar por voz", "FOTO" to "Foto de un recibo").forEach { (clave, texto) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(texto) },
+                                onClick = { menu = false; nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=$clave") }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        bottomBar = {
+            if (pestanaActual != null && !pedirLogin) {
+                NavigationBar {
+                    destinosPrincipales.forEach { d ->
+                        NavigationBarItem(
+                            selected = d == pestanaActual,
+                            onClick = { nav.irAPestana(d.ruta) },
+                            icon = { Icon(d.icono, contentDescription = null) },
+                            label = { Text(d.etiqueta, maxLines = 1, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+            }
+        }
+    ) { relleno ->
+        if (pedirLogin) {
+            Box(Modifier.padding(relleno)) { LoginScreen(vm) }
+        } else NavHost(
+            navController = nav,
+            startDestination = Rutas.INICIO,
+            modifier = Modifier.padding(relleno)
+        ) {
+            composable(Rutas.INICIO) {
+                InicioScreen(
+                    vm = vm,
+                    alAjustes = { nav.navigate(Rutas.AJUSTES) },
+                    alPlan = { nav.irAPestana(Rutas.PRESUPUESTO) },
+                    alDeudas = { nav.irAPestana(Rutas.DEUDAS) },
+                    alMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
+                    alPorRevisar = { nav.navigate(Rutas.BANDEJA) },
+                    alAhorro = { nav.irAPestana(Rutas.AHORRO) }
+                )
+            }
+            composable("panel_anterior") {
+                DashboardScreen(
+                    vm = vm,
+                    alNuevoMovimiento = { tipo -> nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=$tipo") },
+                    alNuevoAporte = { nav.irAPestanaCon("${Rutas.BANCO}?pestana=0&nuevo=true") },
+                    alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alRegistrarPago = { nav.irAPestanaCon("${Rutas.BANCO}?pestana=1&nuevo=false") },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alVerDeudas = { nav.irAPestana(Rutas.DEUDAS) },
+                    alVerMovimientos = { nav.irAPestana(Rutas.MOVIMIENTOS) },
+                    alAjustes = { nav.navigate(Rutas.AJUSTES) },
+                    alBandeja = { nav.navigate(Rutas.BANDEJA) },
+                    alMetas = { nav.navigate(Rutas.METAS) },
+                    alPresupuesto = { nav.irAPestana(Rutas.PRESUPUESTO) },
+                    alAnio = { nav.navigate(Rutas.ANIO) }
+                )
+            }
+            composable(Rutas.INGRESOS) {
+                IngresosScreen(
+                    vm = vm,
+                    alHablar = { nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=VOZ") },
+                    alFoto = { nav.irAPestanaCon("${Rutas.MOVIMIENTOS}?nuevo=FOTO") }
+                )
+            }
+            composable(Rutas.METAS) {
+                MetasScreen(vm = vm, alVolver = { nav.popBackStack() })
+            }
+            composable(
+                route = "${Rutas.MOVIMIENTOS}?nuevo={nuevo}",
+                arguments = listOf(navArgument("nuevo") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                })
+            ) { e ->
+                MovimientosScreen(
+                    vm = vm,
+                    nuevoInicial = e.arguments?.getString("nuevo").orEmpty(),
+                    alConfigurar = { nav.navigate(Rutas.CONFIG_FINANZAS) },
+                    alBandeja = { nav.navigate(Rutas.BANDEJA) }
+                )
+            }
+            composable(Rutas.PRESUPUESTO) {
+                PresupuestoScreen(
+                    vm = vm,
+                    alAbrirDeuda = { id -> nav.navigate("${Rutas.DETALLE_DEUDA}/$id") },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alMetas = { nav.navigate(Rutas.METAS) },
+                    alCalendario = { nav.navigate(Rutas.CALENDARIO) }
+                )
+            }
+            composable(Rutas.AHORRO) {
+                AhorroScreen(
+                    vm = vm,
+                    alGuardar = { nav.navigate("${Rutas.BANCO}?pestana=0&nuevo=true") },
+                    alPrestarme = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alPrestarAOtro = { nav.navigate(Rutas.NUEVO_PRESTAMO_OTRO) },
+                    alVerBanco = { nav.navigate("${Rutas.BANCO}?pestana=0&nuevo=false") },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") },
+                    alMetas = { nav.navigate(Rutas.METAS) }
+                )
+            }
+            composable(Rutas.ANIO) {
+                ResumenAnioScreen(vm = vm, alVolver = { nav.popBackStack() })
+            }
+            composable(Rutas.CALENDARIO) {
+                CalendarioScreen(vm = vm)
+            }
+            composable(
+                route = "${Rutas.BANCO}?pestana={pestana}&nuevo={nuevo}",
+                arguments = listOf(
+                    navArgument("pestana") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    },
+                    navArgument("nuevo") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }
+                )
+            ) { e ->
+                BancoScreen(
+                    vm = vm,
+                    pestanaInicial = e.arguments?.getInt("pestana") ?: 0,
+                    abrirAporte = e.arguments?.getBoolean("nuevo") ?: false,
+                    alNuevoPrestamo = { nav.navigate(Rutas.NUEVO_PRESTAMO) },
+                    alPrestarAOtro = { nav.navigate(Rutas.NUEVO_PRESTAMO_OTRO) },
+                    alAbrirPrestamo = { id -> nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") }
+                )
+            }
+            composable(Rutas.DEUDAS) {
+                DeudasScreen(vm = vm, alAbrir = { id -> nav.navigate("${Rutas.DETALLE_DEUDA}/$id") })
+            }
+            composable(
+                route = "${Rutas.DETALLE_DEUDA}/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType })
+            ) { e ->
+                DetalleDeudaScreen(
+                    vm = vm,
+                    deudaId = e.arguments?.getLong("id") ?: 0L,
+                    alVolver = { nav.popBackStack() }
+                )
+            }
+            composable(Rutas.AJUSTES) {
+                AjustesScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alConfigFinanzas = { nav.navigate(Rutas.CONFIG_FINANZAS) }
+                )
+            }
+            composable(Rutas.BANDEJA) {
+                BandejaScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alComoConectar = { nav.navigate(Rutas.AJUSTES) }
+                )
+            }
+            composable(Rutas.CONFIG_FINANZAS) {
+                ConfiguracionFinanzasScreen(vm = vm, alVolver = { nav.popBackStack() })
+            }
+            composable(Rutas.NUEVO_PRESTAMO_OTRO) {
+                NuevoPrestamoScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alCrear = { id ->
+                        nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") {
+                            popUpTo(Rutas.NUEVO_PRESTAMO_OTRO) { inclusive = true }
+                        }
+                    },
+                    aOtro = true
+                )
+            }
+            composable(Rutas.NUEVO_PRESTAMO) {
+                NuevoPrestamoScreen(
+                    vm = vm,
+                    alVolver = { nav.popBackStack() },
+                    alCrear = { id ->
+                        nav.navigate("${Rutas.DETALLE_PRESTAMO}/$id") {
+                            popUpTo(Rutas.NUEVO_PRESTAMO) { inclusive = true }
+                        }
+                    }
+                )
+            }
+            composable(
+                route = "${Rutas.DETALLE_PRESTAMO}/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType })
+            ) { e ->
+                DetallePrestamoScreen(
+                    vm = vm,
+                    prestamoId = e.arguments?.getLong("id") ?: 0L,
+                    alVolver = { nav.popBackStack() }
+                )
+            }
+        }
+    }
+}
