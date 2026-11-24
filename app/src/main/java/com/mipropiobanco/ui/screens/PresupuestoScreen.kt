@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -83,6 +85,9 @@ fun PresupuestoScreen(
     var configurandoSalario by remember { mutableStateOf(false) }
     var registrandoIngreso by remember { mutableStateOf<IngresoEsperado?>(null) }
     var pagandoFijo by remember { mutableStateOf<Obligacion?>(null) }
+    var nuevoFijo by remember { mutableStateOf<com.mipropiobanco.domain.TipoMovimiento?>(null) }
+    var topeDe by remember { mutableStateOf<com.mipropiobanco.data.local.CategoriaEntity?>(null) }
+    val categorias by vm.categorias.collectAsState()
 
     fun abrir(o: Obligacion) {
         when (o.tipo) {
@@ -137,9 +142,74 @@ fun PresupuestoScreen(
             }
             when (vista) {
                 VistaPlan.MES -> {
-                    item { TarjetaMes(r) }
+                    val todas = (r.q1.obligaciones + r.q2.obligaciones).sortedBy { it.fecha }
+                    val ingresos = (r.q1.ingresosEsperados + r.q2.ingresosEsperados).sortedBy { it.fecha }
+                    item { TarjetaPlanMes(r, todas) }
+
+                    item { EncabezadoGrupo("💰 Lo que gano", ingresos.sumOf { it.monto }) }
+                    if (ingresos.isEmpty()) item { TextoVacio("Aún no tienes ingresos fijos. Agrega tu salario u otros ingresos.") }
+                    items(ingresos, key = { "mi-${it.ocurrencia.plantilla.id}-${it.ocurrencia.indice}" }) { ing ->
+                        FilaIngreso(ing) { if (!ing.recibido) registrandoIngreso = ing }
+                    }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { configurandoSalario = true }) { Text("💼 Salario") }
+                            OutlinedButton(onClick = { nuevoFijo = com.mipropiobanco.domain.TipoMovimiento.INGRESO }) { Text("+ Otro ingreso fijo") }
+                        }
+                    }
+
+                    listOf(TipoObligacion.FIJO, TipoObligacion.DEUDA, TipoObligacion.CUOTA_BANCO, TipoObligacion.META).forEach { t ->
+                        val grupo = todas.filter { it.tipo == t }
+                        if (grupo.isNotEmpty() || t == TipoObligacion.FIJO) {
+                            item {
+                                EncabezadoGrupo(
+                                    when (t) {
+                                        TipoObligacion.FIJO -> "📌 Gastos fijos"
+                                        TipoObligacion.DEUDA -> "💳 Deudas"
+                                        TipoObligacion.CUOTA_BANCO -> "🏦 Cuotas a Mi banco"
+                                        TipoObligacion.META -> "🎯 Ahorro para metas"
+                                    },
+                                    grupo.sumOf { it.monto }
+                                )
+                            }
+                            items(grupo, key = { "mo-${it.tipo}-${it.refId}-${it.fecha}-${it.estado}" }) { o -> FilaObligacion(o) { abrir(o) } }
+                            if (t == TipoObligacion.FIJO) {
+                                item {
+                                    OutlinedButton(onClick = { nuevoFijo = com.mipropiobanco.domain.TipoMovimiento.GASTO }) { Text("+ Gasto fijo (arriendo, servicios…)") }
+                                }
+                            }
+                        }
+                    }
+
+                    item { EncabezadoGrupo("🛒 Presupuesto de gastos", r.gastosPorCategoria.sumOf { it.planeado }) }
+                    item { TextoVacio("Toca una categoría para ponerle tope al mes.") }
+                    val conGasto = r.gastosPorCategoria
+                    val sinUsar = categorias.filter { c -> c.tipo == com.mipropiobanco.domain.TipoMovimiento.GASTO.name && conGasto.none { it.categoria.id == c.id } }
+                    items(conGasto, key = { "mg-${it.categoria.id}" }) { v ->
+                        Surface(onClick = { topeDe = v.categoria }, color = Color.Transparent) {
+                            FilaBarra("${v.categoria.icono} ${v.categoria.nombre}", v.planeado, v.real)
+                        }
+                    }
+                    if (sinUsar.isNotEmpty()) {
+                        item {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                sinUsar.forEach { c ->
+                                    FilterChip(selected = false, onClick = { topeDe = c }, label = { Text("+ ${c.icono} ${c.nombre}") })
+                                }
+                            }
+                        }
+                    }
+
+                    if (r.ingresosPorCategoria.isNotEmpty()) {
+                        item { EncabezadoGrupo("📈 Ingresos: esperado vs real", r.ingresosReales) }
+                        items(r.ingresosPorCategoria, key = { "mic-${it.categoria.id}" }) { i ->
+                            FilaBarra("${i.categoria.icono} ${i.categoria.nombre}", i.planeado, i.real, esIngreso = true)
+                        }
+                    }
+
                     item { TarjetaQuincenaCompacta(r.q1) }
                     item { TarjetaQuincenaCompacta(r.q2) }
+                    item { TarjetaMes(r) }
                 }
                 VistaPlan.Q1, VistaPlan.Q2 -> {
                     val q = r.de(if (vista == VistaPlan.Q1) Quincena.Q1 else Quincena.Q2)
@@ -159,13 +229,21 @@ fun PresupuestoScreen(
                             )
                         }
                     }
-                    items(q.obligaciones, key = { "o-${it.tipo}-${it.refId}-${it.fecha}" }) { o ->
+                    items(q.obligaciones, key = { "o-${it.tipo}-${it.refId}-${it.fecha}-${it.estado}" }) { o ->
                         FilaObligacion(o) { abrir(o) }
                     }
                     if (q.variables.isNotEmpty()) {
-                        item { Text("🛒 Gastos variables", style = MaterialTheme.typography.titleMedium) }
+                        item { EncabezadoGrupo("🛒 Gastos de la quincena", q.variables.sumOf { it.real }) }
                         items(q.variables, key = { "v-${it.categoria.id}" }) { v ->
-                            FilaBarra("${v.categoria.icono} ${v.categoria.nombre}", v.planeado, v.real)
+                            Surface(onClick = { topeDe = v.categoria }, color = Color.Transparent) {
+                                FilaBarra("${v.categoria.icono} ${v.categoria.nombre}", v.planeado, v.real)
+                            }
+                        }
+                    }
+                    if (q.ingresosPorCategoria.isNotEmpty()) {
+                        item { EncabezadoGrupo("📈 Ingresos de la quincena", q.ingresosReales) }
+                        items(q.ingresosPorCategoria, key = { "ic-${it.categoria.id}" }) { i ->
+                            FilaBarra("${i.categoria.icono} ${i.categoria.nombre}", i.planeado, i.real, esIngreso = true)
                         }
                     }
                 }
@@ -178,6 +256,25 @@ fun PresupuestoScreen(
         }
     }
 
+    nuevoFijo?.let { tipo ->
+        DialogoNuevoFijo(
+            tipo = tipo,
+            categorias = categorias.filter { it.tipo == tipo.name },
+            alCerrar = { nuevoFijo = null },
+            alGuardar = { nombre, monto, dia, cat -> vm.agregarFijo(nombre, tipo, monto, dia, cat); nuevoFijo = null }
+        )
+    }
+    topeDe?.let { c ->
+        DialogoMontoReal(
+            titulo = "Tope para ${c.icono} ${c.nombre}",
+            detalle = "Cuánto quieres gastar como máximo al mes en esta categoría. Se reparte mitad y mitad en las quincenas. Pon 0 para quitar el tope.",
+            montoInicial = c.presupuestoMensual,
+            textoBoton = "Guardar tope",
+            permitirCero = true,
+            alCerrar = { topeDe = null },
+            alGuardar = { monto -> vm.ponerTopeCategoria(c, monto); topeDe = null }
+        )
+    }
     if (configurandoSalario) {
         DialogoSalario(
             alCerrar = { configurandoSalario = false },
@@ -359,14 +456,14 @@ private fun FilaObligacion(o: Obligacion, alPulsar: () -> Unit) {
 }
 
 @Composable
-private fun FilaBarra(texto: String, planeado: Long, real: Long) {
-    val fraccion = if (planeado > 0L) (real.toFloat() / planeado).coerceIn(0f, 1f) else 0f
-    val pasado = real > planeado
+private fun FilaBarra(texto: String, planeado: Long, real: Long, esIngreso: Boolean = false) {
+    val fraccion = if (planeado > 0L) (real.toFloat() / planeado).coerceIn(0f, 1f) else if (real > 0L) 1f else 0f
+    val pasado = !esIngreso && planeado > 0L && real > planeado
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row {
             Text(texto, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
             Text(
-                "${Formato.cop(real)} de ${Formato.cop(planeado)}",
+                if (planeado > 0L) "${Formato.cop(real)} de ${Formato.cop(planeado)}" else "${Formato.cop(real)} · sin tope",
                 style = MaterialTheme.typography.labelMedium,
                 color = if (pasado) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
             )
@@ -428,9 +525,10 @@ private fun DialogoMontoReal(
     montoInicial: Long,
     textoBoton: String,
     alCerrar: () -> Unit,
+    permitirCero: Boolean = false,
     alGuardar: (Long) -> Unit
 ) {
-    var monto by remember { mutableStateOf(montoInicial.toString()) }
+    var monto by remember { mutableStateOf(if (montoInicial > 0L) montoInicial.toString() else "") }
     AlertDialog(
         onDismissRequest = alCerrar,
         title = { Text(titulo) },
@@ -441,9 +539,117 @@ private fun DialogoMontoReal(
             }
         },
         confirmButton = {
-            FilledTonalButton(onClick = { alGuardar(monto.toLongOrNull() ?: 0L) }, enabled = (monto.toLongOrNull() ?: 0L) > 0L) {
+            FilledTonalButton(onClick = { alGuardar(monto.toLongOrNull() ?: 0L) }, enabled = permitirCero || (monto.toLongOrNull() ?: 0L) > 0L) {
                 Text(textoBoton)
             }
+        },
+        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun EncabezadoGrupo(titulo: String, total: Long) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(titulo, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Text(Formato.cop(total), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun TextoVacio(texto: String) {
+    Text(texto, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** Resumen claro del mes: gano − pago (fijos, deudas, cuotas, metas) = me queda. */
+@Composable
+private fun TarjetaPlanMes(r: ResumenPresupuestoMes, todas: List<Obligacion>) {
+    val gano = r.ingresosPlaneados
+    val fijos = todas.filter { it.tipo == TipoObligacion.FIJO }.sumOf { it.monto }
+    val deudas = todas.filter { it.tipo == TipoObligacion.DEUDA }.sumOf { it.monto }
+    val cuotas = todas.filter { it.tipo == TipoObligacion.CUOTA_BANCO }.sumOf { it.monto }
+    val metas = todas.filter { it.tipo == TipoObligacion.META }.sumOf { it.monto }
+    val variables = r.gastosPorCategoria.sumOf { it.planeado }
+    val queda = gano - fijos - deudas - cuotas - metas - variables
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Mi plan de ${Formato.mesAnio(r.mes)}", style = MaterialTheme.typography.titleMedium)
+            Fila("💰 Gano", gano)
+            Fila("📌 Gastos fijos", fijos)
+            Fila("💳 Deudas", deudas)
+            if (cuotas > 0L) Fila("🏦 Cuotas Mi banco", cuotas)
+            if (metas > 0L) Fila("🎯 Metas", metas)
+            if (variables > 0L) Fila("🛒 Topes de gastos", variables)
+            Row {
+                Text("Me queda", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                Text(
+                    Formato.cop(queda),
+                    fontWeight = FontWeight.Bold,
+                    color = if (queda >= 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            }
+            Text(
+                if (gano == 0L) "Agrega lo que ganas para ver cuánto te queda."
+                else if (queda >= 0L) "Con lo que ganas cubres todo y te sobran ${Formato.cop(queda)}."
+                else "Te faltan ${Formato.cop(-queda)} para cubrir todo el mes.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun DialogoNuevoFijo(
+    tipo: com.mipropiobanco.domain.TipoMovimiento,
+    categorias: List<com.mipropiobanco.data.local.CategoriaEntity>,
+    alCerrar: () -> Unit,
+    alGuardar: (String, Long, Int, Long?) -> Unit
+) {
+    val esIngreso = tipo == com.mipropiobanco.domain.TipoMovimiento.INGRESO
+    var nombre by remember { mutableStateOf("") }
+    var monto by remember { mutableStateOf("") }
+    var dia by remember { mutableStateOf("") }
+    var categoria by remember { mutableStateOf<Long?>(null) }
+    AlertDialog(
+        onDismissRequest = alCerrar,
+        title = { Text(if (esIngreso) "💰 Ingreso fijo" else "📌 Gasto fijo") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = nombre, onValueChange = { nombre = it },
+                    label = { Text(if (esIngreso) "¿Qué es? (ej. arriendo que cobro)" else "¿Qué es? (ej. arriendo, internet)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                CampoMonto(valor = monto, alCambiar = { monto = it }, etiqueta = "Monto al mes")
+                androidx.compose.material3.OutlinedTextField(
+                    value = dia, onValueChange = { dia = it.filter(Char::isDigit).take(2) },
+                    label = { Text(if (esIngreso) "Día que te pagan" else "Día que pagas") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                if (categorias.isNotEmpty()) {
+                    Text("Categoría (opcional)", style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categorias.forEach { c ->
+                            FilterChip(
+                                selected = categoria == c.id,
+                                onClick = { categoria = if (categoria == c.id) null else c.id },
+                                label = { Text("${c.icono} ${c.nombre}") }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val m = monto.toLongOrNull() ?: 0L
+            val d = dia.toIntOrNull() ?: 0
+            FilledTonalButton(
+                onClick = { alGuardar(nombre, m, d, categoria) },
+                enabled = nombre.isNotBlank() && m > 0L && d in 1..31
+            ) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } }
     )

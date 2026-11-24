@@ -40,6 +40,18 @@ data class IngresoEsperado(val nombre: String, val fecha: LocalDate, val monto: 
 /** Presupuesto variable de una categoría en la quincena. */
 data class RenglonVariable(val categoria: CategoriaEntity, val planeado: Long, val real: Long)
 
+/** Ingreso por categoría: lo que esperaba (fijos) contra lo que de verdad entró. */
+data class RenglonIngreso(val categoria: CategoriaEntity, val planeado: Long, val real: Long)
+
+/** Junta los renglones de las dos quincenas por categoría. */
+private fun unirVariables(a: List<RenglonVariable>, b: List<RenglonVariable>): List<RenglonVariable> =
+    (a + b).groupBy { it.categoria.id }.values.map { g -> RenglonVariable(g.first().categoria, g.sumOf { it.planeado }, g.sumOf { it.real }) }
+        .sortedByDescending { maxOf(it.planeado, it.real) }
+
+private fun unirIngresos(a: List<RenglonIngreso>, b: List<RenglonIngreso>): List<RenglonIngreso> =
+    (a + b).groupBy { it.categoria.id }.values.map { g -> RenglonIngreso(g.first().categoria, g.sumOf { it.planeado }, g.sumOf { it.real }) }
+        .sortedByDescending { maxOf(it.planeado, it.real) }
+
 data class ResumenQuincena(
     val quincena: Quincena,
     val desde: LocalDate,
@@ -51,6 +63,7 @@ data class ResumenQuincena(
     val saldoQueViene: Long,
     val obligaciones: List<Obligacion>,
     val variables: List<RenglonVariable>,
+    val ingresosPorCategoria: List<RenglonIngreso>,
     /** Todo lo que salió de verdad en la quincena (gastos, pagos de deudas, ahorro). */
     val salidasReales: Long,
     val ahorroReal: Long
@@ -101,6 +114,9 @@ data class ResumenPresupuestoMes(
     val tasaAhorro: Int get() = if (ingresosReales > 0L) (ahorroReal * 100 / ingresosReales).toInt() else 0
 
     fun de(q: Quincena) = if (q == Quincena.Q1) q1 else q2
+
+    val gastosPorCategoria: List<RenglonVariable> get() = unirVariables(q1.variables, q2.variables)
+    val ingresosPorCategoria: List<RenglonIngreso> get() = unirIngresos(q1.ingresosPorCategoria, q2.ingresosPorCategoria)
 }
 
 object PresupuestoQuincenal {
@@ -165,24 +181,23 @@ object PresupuestoQuincenal {
         // ---- Obligaciones con fecha en el mes ----
         val obligaciones = mutableListOf<Obligacion>()
 
+        // Deudas: la fecha manda la misma que ves en Deudas (próximo pago).
+        // Meses anteriores a ese próximo pago solo muestran lo que sí abonaste.
         deudas.forEach { d ->
-            if (Formato.aLocalDate(d.deuda.fechaRegistro).isAfter(finMes)) return@forEach
-            val dia = if (d.deuda.proximoPago > 0L) Formato.aLocalDate(d.deuda.proximoPago).dayOfMonth else d.deuda.diaPago
-            val vence = diaEnMes(mes, dia)
-            val desde = vence.minusDays(25)
-            val hasta = vence.plusDays(10)
-            val abonadoVentana = d.abonos
-                .filter { val f = Formato.aLocalDate(it.fecha); !f.isBefore(desde) && !f.isAfter(hasta) }
-                .sumOf { it.monto }
-            val saldoAntes = d.saldo + abonadoVentana
-            if (saldoAntes <= 0L) return@forEach
-            val monto = minOf(d.deuda.pagoMinimo.coerceAtLeast(1L), saldoAntes)
-            val proximoDespues = d.deuda.proximoPago > 0L && YearMonth.from(Formato.aLocalDate(d.deuda.proximoPago)).isAfter(mes)
-            val estado = when {
-                abonadoVentana >= monto || (proximoDespues && abonadoVentana > 0L) -> EstadoPago.PAGADO
-                vence.isBefore(hoy) -> EstadoPago.VENCIDO
-                else -> EstadoPago.PENDIENTE
+            val abonosMes = d.abonos.filter { YearMonth.from(Formato.aLocalDate(it.fecha)) == mes }
+            val prox = d.proximoVencimiento(hoy)
+            val mesProx = YearMonth.from(prox)
+            val pagadosAntes = if (mes == mesProx) abonosMes.filter { Formato.aLocalDate(it.fecha).isBefore(prox) } else abonosMes
+            if (pagadosAntes.isNotEmpty() && !mes.isAfter(mesProx)) {
+                obligaciones += Obligacion(
+                    TipoObligacion.DEUDA, d.deuda.id, d.deuda.acreedor,
+                    Formato.aLocalDate(pagadosAntes.minOf { it.fecha }), pagadosAntes.sumOf { it.monto }, EstadoPago.PAGADO
+                )
             }
+            if (d.pagada || mes.isBefore(mesProx)) return@forEach
+            val vence = if (mes == mesProx) prox else diaEnMes(mes, prox.dayOfMonth)
+            val monto = minOf(d.deuda.pagoMinimo.coerceAtLeast(1L), d.saldo)
+            val estado = if (vence.isBefore(hoy)) EstadoPago.VENCIDO else EstadoPago.PENDIENTE
             obligaciones += Obligacion(TipoObligacion.DEUDA, d.deuda.id, d.deuda.acreedor, vence, monto, estado)
         }
 
@@ -263,14 +278,21 @@ object PresupuestoQuincenal {
             val gastos = delRango.filter { it.tipo == TipoMovimiento.GASTO.name }
             val ahorro = gastos.filter { Cuadre.esAhorro(cats[it.categoriaId]) }.sumOf { it.monto }
             val esperados = ingresosEsperados.filter { quincenaDe(it.fecha) == q }.sortedBy { it.fecha }
-            val variables = variablesCats.filter { it.id !in fijosCats }.map { c ->
-                val (p1, p2) = partir(c.presupuestoMensual)
-                RenglonVariable(
-                    c,
-                    if (q == Quincena.Q1) p1 else p2,
-                    gastos.filter { it.categoriaId == c.id }.sumOf { it.monto }
-                )
-            }
+            val realPorCat = gastos.groupBy { it.categoriaId }.mapValues { e -> e.value.sumOf { it.monto } }
+            val variables = categorias.filter { c ->
+                c.tipo == TipoMovimiento.GASTO.name &&
+                    ((c.presupuestoMensual > 0L && c.id !in fijosCats) || (realPorCat[c.id] ?: 0L) > 0L)
+            }.map { c ->
+                val (p1, p2) = partir(if (c.id in fijosCats) 0L else c.presupuestoMensual)
+                RenglonVariable(c, if (q == Quincena.Q1) p1 else p2, realPorCat[c.id] ?: 0L)
+            }.sortedByDescending { maxOf(it.planeado, it.real) }
+            val ingresosReales = delRango.filter { it.tipo == TipoMovimiento.INGRESO.name }
+                .groupBy { it.categoriaId }.mapValues { e -> e.value.sumOf { it.monto } }
+            val ingresosPlan = esperados.groupBy { it.ocurrencia.plantilla.categoriaId }
+                .mapValues { e -> e.value.sumOf { it.monto } }
+            val ingresosCat = (ingresosReales.keys + ingresosPlan.keys).mapNotNull { id ->
+                cats[id]?.let { RenglonIngreso(it, ingresosPlan[id] ?: 0L, ingresosReales[id] ?: 0L) }
+            }.sortedByDescending { maxOf(it.planeado, it.real) }
             return ResumenQuincena(
                 quincena = q, desde = desde, hasta = hasta,
                 ingresosEsperados = esperados,
@@ -280,6 +302,7 @@ object PresupuestoQuincenal {
                 obligaciones = obligaciones.filter { quincenaDe(it.fecha) == q }
                     .sortedWith(compareBy({ it.estado != EstadoPago.VENCIDO }, { it.fecha })),
                 variables = variables,
+                ingresosPorCategoria = ingresosCat,
                 salidasReales = gastos.sumOf { it.monto },
                 ahorroReal = ahorro
             )

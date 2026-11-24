@@ -1158,6 +1158,24 @@ class BancoViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
             )
         }.flowOn(Dispatchers.Default)
 
+    /** Agrega un ingreso o gasto fijo mensual que se paga/recibe el día [dia]. */
+    fun agregarFijo(nombre: String, tipo: TipoMovimiento, monto: Long, dia: Int, categoriaId: Long?) = ejecutar(
+        accion = {
+            require(nombre.isNotBlank()) { "Escribe el nombre" }
+            require(monto > 0L) { "Escribe el monto" }
+            require(dia in 1..31) { "El día debe estar entre 1 y 31" }
+            val medio = finanzas.medioPorDefecto() ?: throw IllegalStateException("Crea primero una cuenta")
+            val cat = categoriaId ?: if (tipo == TipoMovimiento.INGRESO) finanzas.categoriaOtrosIngresos() else finanzas.categoriaGastosFijos()
+            val inicio = com.mipropiobanco.domain.PresupuestoQuincenal.diaEnMes(java.time.YearMonth.now(), dia)
+            finanzas.guardarPlantilla(null, nombre.trim(), tipo, monto, cat, medio.id, Periodicidad.MENSUAL, Formato.aMillis(inicio), false, true)
+        },
+        mensaje = { if (tipo == TipoMovimiento.INGRESO) "💰 Ingreso fijo agregado" else "📌 Gasto fijo agregado" }
+    )
+
+    /** Cambia el tope mensual de una categoría de gasto (0 = sin tope). */
+    fun ponerTopeCategoria(c: com.mipropiobanco.data.local.CategoriaEntity, tope: Long) =
+        guardarCategoria(c.id, c.nombre, TipoMovimiento.GASTO, c.icono, tope)
+
     /** Mis pagos: crea el salario como dos ingresos fijos mensuales (uno por quincena). */
     fun configurarSalario(parte1: Long, dia1: Int, parte2: Long, dia2: Int) = ejecutar(
         accion = {

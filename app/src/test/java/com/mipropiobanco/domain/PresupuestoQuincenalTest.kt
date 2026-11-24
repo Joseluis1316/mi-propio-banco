@@ -56,7 +56,7 @@ class PresupuestoQuincenalTest {
             )
         ) else emptyList()
         return ResumenQuincena(
-            Quincena.Q2, hoy, hoy, esperados, porRecibir, entra, viene, obligaciones, emptyList(), salio, 0L
+            Quincena.Q2, hoy, hoy, esperados, porRecibir, entra, viene, obligaciones, emptyList(), emptyList(), salio, 0L
         )
     }
 
